@@ -1,53 +1,86 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, nodeProgressTable, achievementsTable, nodesTable } from "@workspace/db";
 import { OpenNodeParams, ReadNodeParams } from "@workspace/api-zod";
+import type { Request, Response } from "express";
 
 const router: IRouter = Router();
 
-async function getProgressData() {
-  const allProgress = await db.select().from(nodeProgressTable);
-  const allAchievements = await db.select().from(achievementsTable);
+function getAuthUserId(req: Request, res: Response): number | null {
+  const userId = req.session.userId;
+  if (!userId) {
+    res.status(401).json({ error: "Autenticação necessária" });
+    return null;
+  }
+  return userId;
+}
+
+async function getProgressData(userId: number) {
+  const userProgress = await db.select().from(nodeProgressTable).where(eq(nodeProgressTable.userId, userId));
+  const userAchievements = await db.select().from(achievementsTable).where(eq(achievementsTable.userId, userId));
   const allNodes = await db.select().from(nodesTable);
 
-  const openedNodes = allProgress.filter((p) => p.opened).map((p) => p.nodeCode);
-  const readNodes = allProgress.filter((p) => p.read).map((p) => p.nodeCode);
+  const openedNodes = userProgress.filter((p) => p.opened).map((p) => p.nodeCode);
+  const readNodes = userProgress.filter((p) => p.read).map((p) => p.nodeCode);
   const totalNodes = allNodes.length;
   const explorationPercent = totalNodes > 0 ? Math.round((openedNodes.length / totalNodes) * 100) : 0;
 
-  return {
-    openedNodes,
-    readNodes,
-    achievements: allAchievements.map((a) => ({
-      id: a.id,
-      code: a.code,
-      title: a.title,
-      description: a.description,
-      type: a.type as "explored" | "read" | "exercise" | "approved",
-      nodeCode: a.nodeCode ?? null,
-      earnedAt: a.earnedAt ? a.earnedAt.toISOString() : null,
-      earned: a.earned,
-    })),
-    totalNodes,
-    explorationPercent,
-  };
+  const earnedMap = new Map(userAchievements.map((a) => [a.code, a]));
+
+  const achievements = allNodes.flatMap((node) => {
+    const exploredCode = `explored_${node.code}`;
+    const readCode = `read_${node.code}`;
+    const exploredAch = earnedMap.get(exploredCode);
+    const readAch = earnedMap.get(readCode);
+    return [
+      {
+        id: exploredAch?.id ?? 0,
+        code: exploredCode,
+        title: `Explorador: ${node.title}`,
+        description: `Explorou o tópico ${node.title}`,
+        type: "explored" as const,
+        nodeCode: node.code,
+        earnedAt: exploredAch?.earnedAt ? exploredAch.earnedAt.toISOString() : null,
+        earned: exploredAch?.earned ?? false,
+      },
+      {
+        id: readAch?.id ?? 0,
+        code: readCode,
+        title: `Leitor: ${node.title}`,
+        description: `Leu o conteúdo de ${node.title}`,
+        type: "read" as const,
+        nodeCode: node.code,
+        earnedAt: readAch?.earnedAt ? readAch.earnedAt.toISOString() : null,
+        earned: readAch?.earned ?? false,
+      },
+    ];
+  });
+
+  return { openedNodes, readNodes, achievements, totalNodes, explorationPercent };
 }
 
-router.get("/progress", async (_req, res): Promise<void> => {
-  const progress = await getProgressData();
+router.get("/progress", async (req, res): Promise<void> => {
+  const userId = getAuthUserId(req, res);
+  if (!userId) return;
+  const progress = await getProgressData(userId);
   res.json(progress);
 });
 
-router.get("/summary", async (_req, res): Promise<void> => {
-  const allProgress = await db.select().from(nodeProgressTable);
-  const allAchievements = await db.select().from(achievementsTable);
+router.get("/summary", async (req, res): Promise<void> => {
+  const userId = getAuthUserId(req, res);
+  if (!userId) return;
+
+  const userProgress = await db.select().from(nodeProgressTable).where(eq(nodeProgressTable.userId, userId));
+  const userAchievements = await db.select().from(achievementsTable).where(eq(achievementsTable.userId, userId));
   const allNodes = await db.select().from(nodesTable);
 
-  const openedNodes = allProgress.filter((p) => p.opened).map((p) => p.nodeCode);
-  const readNodes = allProgress.filter((p) => p.read).map((p) => p.nodeCode);
-  const earnedAchievements = allAchievements.filter((a) => a.earned);
+  const openedNodes = userProgress.filter((p) => p.opened).map((p) => p.nodeCode);
+  const readNodes = userProgress.filter((p) => p.read).map((p) => p.nodeCode);
   const totalNodes = allNodes.length;
   const explorationPercent = totalNodes > 0 ? Math.round((openedNodes.length / totalNodes) * 100) : 0;
+
+  const totalAchievements = allNodes.length * 2;
+  const earnedAchievements = userAchievements.filter((a) => a.earned).length;
 
   const childCounts = allNodes.reduce<Record<string, number>>((acc, n) => {
     if (n.parentCode) {
@@ -56,7 +89,7 @@ router.get("/summary", async (_req, res): Promise<void> => {
     return acc;
   }, {});
 
-  const recentProgress = allProgress
+  const recentProgress = userProgress
     .filter((p) => p.opened && p.openedAt)
     .sort((a, b) => (b.openedAt?.getTime() ?? 0) - (a.openedAt?.getTime() ?? 0))
     .slice(0, 5);
@@ -75,8 +108,8 @@ router.get("/summary", async (_req, res): Promise<void> => {
   res.json({
     nodesExplored: openedNodes.length,
     nodesRead: readNodes.length,
-    achievementsEarned: earnedAchievements.length,
-    totalAchievements: allAchievements.length,
+    achievementsEarned: earnedAchievements,
+    totalAchievements,
     totalNodes,
     explorationPercent,
     recentlyOpened,
@@ -84,6 +117,9 @@ router.get("/summary", async (_req, res): Promise<void> => {
 });
 
 router.post("/progress/open/:code", async (req, res): Promise<void> => {
+  const userId = getAuthUserId(req, res);
+  if (!userId) return;
+
   const params = OpenNodeParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -92,34 +128,48 @@ router.post("/progress/open/:code", async (req, res): Promise<void> => {
 
   const { code } = params.data;
 
-  const existing = await db.select().from(nodeProgressTable).where(eq(nodeProgressTable.nodeCode, code));
+  const [existing] = await db.select().from(nodeProgressTable)
+    .where(and(eq(nodeProgressTable.userId, userId), eq(nodeProgressTable.nodeCode, code)));
 
-  if (existing.length === 0) {
-    await db.insert(nodeProgressTable).values({
-      nodeCode: code,
-      opened: true,
-      openedAt: new Date(),
-    });
-  } else if (!existing[0].opened) {
+  if (!existing) {
+    await db.insert(nodeProgressTable).values({ userId, nodeCode: code, opened: true, openedAt: new Date() });
+  } else if (!existing.opened) {
     await db.update(nodeProgressTable)
       .set({ opened: true, openedAt: new Date() })
-      .where(eq(nodeProgressTable.nodeCode, code));
+      .where(and(eq(nodeProgressTable.userId, userId), eq(nodeProgressTable.nodeCode, code)));
   }
 
-  // Award "explored" achievement for this node
   const achCode = `explored_${code}`;
-  const existingAch = await db.select().from(achievementsTable).where(eq(achievementsTable.code, achCode));
-  if (existingAch.length > 0 && !existingAch[0].earned) {
+  const [existingAch] = await db.select().from(achievementsTable)
+    .where(and(eq(achievementsTable.userId, userId), eq(achievementsTable.code, achCode)));
+  if (!existingAch) {
+    const [node] = await db.select().from(nodesTable).where(eq(nodesTable.code, code));
+    if (node) {
+      await db.insert(achievementsTable).values({
+        userId,
+        code: achCode,
+        title: `Explorador: ${node.title}`,
+        description: `Explorou o tópico ${node.title}`,
+        type: "explored",
+        nodeCode: code,
+        earned: true,
+        earnedAt: new Date(),
+      });
+    }
+  } else if (!existingAch.earned) {
     await db.update(achievementsTable)
       .set({ earned: true, earnedAt: new Date() })
-      .where(eq(achievementsTable.code, achCode));
+      .where(and(eq(achievementsTable.userId, userId), eq(achievementsTable.code, achCode)));
   }
 
-  const progress = await getProgressData();
+  const progress = await getProgressData(userId);
   res.json(progress);
 });
 
 router.post("/progress/read/:code", async (req, res): Promise<void> => {
+  const userId = getAuthUserId(req, res);
+  if (!userId) return;
+
   const params = ReadNodeParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -128,10 +178,12 @@ router.post("/progress/read/:code", async (req, res): Promise<void> => {
 
   const { code } = params.data;
 
-  const existing = await db.select().from(nodeProgressTable).where(eq(nodeProgressTable.nodeCode, code));
+  const [existing] = await db.select().from(nodeProgressTable)
+    .where(and(eq(nodeProgressTable.userId, userId), eq(nodeProgressTable.nodeCode, code)));
 
-  if (existing.length === 0) {
+  if (!existing) {
     await db.insert(nodeProgressTable).values({
+      userId,
       nodeCode: code,
       opened: true,
       read: true,
@@ -141,42 +193,86 @@ router.post("/progress/read/:code", async (req, res): Promise<void> => {
   } else {
     await db.update(nodeProgressTable)
       .set({ read: true, readAt: new Date() })
-      .where(eq(nodeProgressTable.nodeCode, code));
+      .where(and(eq(nodeProgressTable.userId, userId), eq(nodeProgressTable.nodeCode, code)));
   }
 
-  // Award "read" achievement for this node
   const achCode = `read_${code}`;
-  const existingAch = await db.select().from(achievementsTable).where(eq(achievementsTable.code, achCode));
-  if (existingAch.length > 0 && !existingAch[0].earned) {
+  const [existingAch] = await db.select().from(achievementsTable)
+    .where(and(eq(achievementsTable.userId, userId), eq(achievementsTable.code, achCode)));
+  if (!existingAch) {
+    const [node] = await db.select().from(nodesTable).where(eq(nodesTable.code, code));
+    if (node) {
+      await db.insert(achievementsTable).values({
+        userId,
+        code: achCode,
+        title: `Leitor: ${node.title}`,
+        description: `Leu o conteúdo de ${node.title}`,
+        type: "read",
+        nodeCode: code,
+        earned: true,
+        earnedAt: new Date(),
+      });
+    }
+  } else if (!existingAch.earned) {
     await db.update(achievementsTable)
       .set({ earned: true, earnedAt: new Date() })
-      .where(eq(achievementsTable.code, achCode));
+      .where(and(eq(achievementsTable.userId, userId), eq(achievementsTable.code, achCode)));
   }
 
-  const progress = await getProgressData();
+  const progress = await getProgressData(userId);
   res.json(progress);
 });
 
-router.get("/achievements", async (_req, res): Promise<void> => {
-  const all = await db.select().from(achievementsTable);
-  res.json(all.map((a) => ({
-    id: a.id,
-    code: a.code,
-    title: a.title,
-    description: a.description,
-    type: a.type,
-    nodeCode: a.nodeCode ?? null,
-    earnedAt: a.earnedAt ? a.earnedAt.toISOString() : null,
-    earned: a.earned,
-  })));
+router.get("/achievements", async (req, res): Promise<void> => {
+  const userId = getAuthUserId(req, res);
+  if (!userId) return;
+
+  const userAchievements = await db.select().from(achievementsTable).where(eq(achievementsTable.userId, userId));
+  const allNodes = await db.select().from(nodesTable);
+
+  const earnedMap = new Map(userAchievements.map((a) => [a.code, a]));
+
+  const achievements = allNodes.flatMap((node) => {
+    const exploredCode = `explored_${node.code}`;
+    const readCode = `read_${node.code}`;
+    const exploredAch = earnedMap.get(exploredCode);
+    const readAch = earnedMap.get(readCode);
+    return [
+      {
+        id: exploredAch?.id ?? 0,
+        code: exploredCode,
+        title: `Explorador: ${node.title}`,
+        description: `Explorou o tópico ${node.title}`,
+        type: "explored" as const,
+        nodeCode: node.code,
+        earnedAt: exploredAch?.earnedAt ? exploredAch.earnedAt.toISOString() : null,
+        earned: exploredAch?.earned ?? false,
+      },
+      {
+        id: readAch?.id ?? 0,
+        code: readCode,
+        title: `Leitor: ${node.title}`,
+        description: `Leu o conteúdo de ${node.title}`,
+        type: "read" as const,
+        nodeCode: node.code,
+        earnedAt: readAch?.earnedAt ? readAch.earnedAt.toISOString() : null,
+        earned: readAch?.earned ?? false,
+      },
+    ];
+  });
+
+  res.json(achievements);
 });
 
-router.get("/progress/daily", async (_req, res): Promise<void> => {
-  const allProgress = await db.select().from(nodeProgressTable);
+router.get("/progress/daily", async (req, res): Promise<void> => {
+  const userId = getAuthUserId(req, res);
+  if (!userId) return;
+
+  const userProgress = await db.select().from(nodeProgressTable).where(eq(nodeProgressTable.userId, userId));
 
   const countsByDate: Record<string, number> = {};
 
-  for (const p of allProgress) {
+  for (const p of userProgress) {
     if (p.openedAt) {
       const date = p.openedAt.toISOString().slice(0, 10);
       countsByDate[date] = (countsByDate[date] ?? 0) + 1;
