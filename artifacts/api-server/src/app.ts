@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import session from "express-session";
+import path from "path";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
@@ -47,5 +48,13 @@ app.use(
 );
 
 app.use("/api", router);
+
+if (process.env["NODE_ENV"] === "production") {
+  const staticDir = path.join(process.cwd(), "artifacts/pap/dist/public");
+  app.use(express.static(staticDir));
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(staticDir, "index.html"));
+  });
+}
 
 export default app;

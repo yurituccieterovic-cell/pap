@@ -17,15 +17,6 @@ localPort = 18434
 [services.development]
 run = "pnpm --filter @workspace/pap run dev"
 
-[services.production]
-build = [ "pnpm", "--filter", "@workspace/pap", "run", "build" ]
-publicDir = "artifacts/pap/dist/public"
-serve = "static"
-
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
-
 [services.env]
 PORT = "18434"
 BASE_PATH = "/"
