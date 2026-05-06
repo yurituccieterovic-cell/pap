@@ -246,6 +246,21 @@ paths:
                 items:
                   $ref: "#/components/schemas/Achievement"
 
+  /progress/daily:
+    get:
+      operationId: getDailyActivity
+      tags: [progress]
+      summary: Get daily activity counts for the heatmap calendar
+      responses:
+        "200":
+          description: Daily activity data for the last 365 days
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DailyActivity"
+
 components:
   schemas:
     HealthStatus:
@@ -272,6 +287,9 @@ components:
           description: Hierarchical code e.g. "1", "11", "12", "111"
         title:
           type: string
+        abbreviation:
+          type: ["string", "null"]
+          description: Short label shown on the node orb e.g. "CH", "Mat"
         parentCode:
           type: ["string", "null"]
         childCount:
@@ -282,6 +300,7 @@ components:
       required:
         - code
         - title
+        - abbreviation
         - parentCode
         - childCount
         - level
@@ -293,6 +312,8 @@ components:
           type: string
         title:
           type: string
+        abbreviation:
+          type: ["string", "null"]
         subtitle:
           type: ["string", "null"]
         content:
@@ -310,6 +331,7 @@ components:
       required:
         - code
         - title
+        - abbreviation
         - subtitle
         - content
         - imageUrl
@@ -413,6 +435,19 @@ components:
         - nodeCode
         - earnedAt
         - earned
+
+    DailyActivity:
+      type: object
+      properties:
+        date:
+          type: string
+          description: Date in YYYY-MM-DD format
+        count:
+          type: integer
+          description: Number of nodes interacted with on that day
+      required:
+        - date
+        - count
 
     Summary:
       type: object

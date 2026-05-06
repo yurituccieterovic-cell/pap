@@ -17,6 +17,11 @@ export interface Node {
   /** Hierarchical code e.g. "1", "11", "12", "111" */
   code: string;
   title: string;
+  /**
+   * Short label shown on the node orb e.g. "CH", "Mat"
+   * @nullable
+   */
+  abbreviation: string | null;
   /** @nullable */
   parentCode: string | null;
   childCount: number;
@@ -27,6 +32,8 @@ export interface Node {
 export interface NodeDetail {
   code: string;
   title: string;
+  /** @nullable */
+  abbreviation: string | null;
   /** @nullable */
   subtitle: string | null;
   /** @nullable */
@@ -89,6 +96,13 @@ export interface Progress {
   achievements: Achievement[];
   totalNodes: number;
   explorationPercent: number;
+}
+
+export interface DailyActivity {
+  /** Date in YYYY-MM-DD format */
+  date: string;
+  /** Number of nodes interacted with on that day */
+  count: number;
 }
 
 export interface Summary {

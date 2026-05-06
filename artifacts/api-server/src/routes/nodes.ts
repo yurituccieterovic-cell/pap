@@ -35,6 +35,7 @@ router.get("/nodes", async (req, res): Promise<void> => {
   const result = filteredNodes.map((n) => ({
     code: n.code,
     title: n.title,
+    abbreviation: n.abbreviation ?? null,
     parentCode: n.parentCode ?? null,
     childCount: childCounts[n.code] ?? 0,
     level: n.level,
@@ -71,6 +72,7 @@ router.get("/nodes/:code", async (req, res): Promise<void> => {
     .map((n) => ({
       code: n.code,
       title: n.title,
+      abbreviation: n.abbreviation ?? null,
       parentCode: n.parentCode ?? null,
       childCount: childCounts[n.code] ?? 0,
       level: n.level,
@@ -79,6 +81,7 @@ router.get("/nodes/:code", async (req, res): Promise<void> => {
   res.json({
     code: node.code,
     title: node.title,
+    abbreviation: node.abbreviation ?? null,
     subtitle: node.subtitle ?? null,
     content: node.content ?? null,
     imageUrl: node.imageUrl ?? null,

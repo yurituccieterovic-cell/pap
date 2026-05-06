@@ -30,6 +30,10 @@ export const ListNodesResponseItem = zod.object({
     .string()
     .describe('Hierarchical code e.g. \"1\", \"11\", \"12\", \"111\"'),
   title: zod.string(),
+  abbreviation: zod
+    .string()
+    .nullable()
+    .describe('Short label shown on the node orb e.g. \"CH\", \"Mat\"'),
   parentCode: zod.string().nullable(),
   childCount: zod.number(),
   level: zod.number().describe("Depth level in the tree"),
@@ -46,6 +50,7 @@ export const GetNodeParams = zod.object({
 export const GetNodeResponse = zod.object({
   code: zod.string(),
   title: zod.string(),
+  abbreviation: zod.string().nullable(),
   subtitle: zod.string().nullable(),
   content: zod.string().nullable(),
   imageUrl: zod.string().nullable(),
@@ -56,6 +61,10 @@ export const GetNodeResponse = zod.object({
         .string()
         .describe('Hierarchical code e.g. \"1\", \"11\", \"12\", \"111\"'),
       title: zod.string(),
+      abbreviation: zod
+        .string()
+        .nullable()
+        .describe('Short label shown on the node orb e.g. \"CH\", \"Mat\"'),
       parentCode: zod.string().nullable(),
       childCount: zod.number(),
       level: zod.number().describe("Depth level in the tree"),
@@ -80,6 +89,10 @@ export const GetSummaryResponse = zod.object({
         .string()
         .describe('Hierarchical code e.g. \"1\", \"11\", \"12\", \"111\"'),
       title: zod.string(),
+      abbreviation: zod
+        .string()
+        .nullable()
+        .describe('Short label shown on the node orb e.g. \"CH\", \"Mat\"'),
       parentCode: zod.string().nullable(),
       childCount: zod.number(),
       level: zod.number().describe("Depth level in the tree"),
@@ -240,3 +253,12 @@ export const ListAchievementsResponseItem = zod.object({
   earned: zod.boolean(),
 });
 export const ListAchievementsResponse = zod.array(ListAchievementsResponseItem);
+
+/**
+ * @summary Get daily activity counts for the heatmap calendar
+ */
+export const GetDailyActivityResponseItem = zod.object({
+  date: zod.string().describe("Date in YYYY-MM-DD format"),
+  count: zod.number().describe("Number of nodes interacted with on that day"),
+});
+export const GetDailyActivityResponse = zod.array(GetDailyActivityResponseItem);

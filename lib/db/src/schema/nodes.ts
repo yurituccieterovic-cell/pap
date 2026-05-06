@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 export const nodesTable = pgTable("nodes", {
   code: text("code").primaryKey(),
   title: text("title").notNull(),
+  abbreviation: text("abbreviation"),
   subtitle: text("subtitle"),
   content: text("content"),
   imageUrl: text("image_url"),

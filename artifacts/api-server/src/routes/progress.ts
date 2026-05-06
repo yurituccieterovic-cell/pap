@@ -171,4 +171,27 @@ router.get("/achievements", async (_req, res): Promise<void> => {
   })));
 });
 
+router.get("/progress/daily", async (_req, res): Promise<void> => {
+  const allProgress = await db.select().from(nodeProgressTable);
+
+  const countsByDate: Record<string, number> = {};
+
+  for (const p of allProgress) {
+    if (p.openedAt) {
+      const date = p.openedAt.toISOString().slice(0, 10);
+      countsByDate[date] = (countsByDate[date] ?? 0) + 1;
+    }
+    if (p.readAt) {
+      const date = p.readAt.toISOString().slice(0, 10);
+      countsByDate[date] = (countsByDate[date] ?? 0) + 1;
+    }
+  }
+
+  const result = Object.entries(countsByDate)
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  res.json(result);
+});
+
 export default router;

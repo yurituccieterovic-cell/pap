@@ -19,6 +19,7 @@ import type {
 import type {
   Achievement,
   CreateNoteBody,
+  DailyActivity,
   Error,
   HealthStatus,
   ListNodesParams,
@@ -1019,6 +1020,81 @@ export function useListAchievements<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListAchievementsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get daily activity counts for the heatmap calendar
+ */
+export const getGetDailyActivityUrl = () => {
+  return `/api/progress/daily`;
+};
+
+export const getDailyActivity = async (
+  options?: RequestInit,
+): Promise<DailyActivity[]> => {
+  return customFetch<DailyActivity[]>(getGetDailyActivityUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDailyActivityQueryKey = () => {
+  return [`/api/progress/daily`] as const;
+};
+
+export const getGetDailyActivityQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDailyActivity>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDailyActivity>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDailyActivityQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDailyActivity>>
+  > = ({ signal }) => getDailyActivity({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDailyActivity>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDailyActivityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDailyActivity>>
+>;
+export type GetDailyActivityQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get daily activity counts for the heatmap calendar
+ */
+
+export function useGetDailyActivity<
+  TData = Awaited<ReturnType<typeof getDailyActivity>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDailyActivity>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDailyActivityQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
