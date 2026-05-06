@@ -17,7 +17,7 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - pnpm workspaces, Node.js 24, TypeScript 5.9
 - Frontend: React + Vite, Tailwind CSS, Framer Motion, Lucide icons, TanStack Query
 - API: Express 5 with pino logging, express-session (memory store)
-- DB: PostgreSQL + Drizzle ORM (57 nodes + users + exercises tables)
+- DB: PostgreSQL + Drizzle ORM (57 nodes + users + exercises + social tables)
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec → React Query hooks)
 - Build: esbuild (CJS bundle for server)
@@ -28,8 +28,9 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - `lib/api-spec/openapi.yaml` — OpenAPI spec (source of truth for API contract)
 - `lib/api-client-react/` — generated React Query hooks (do not edit manually)
 - `lib/api-zod/src/generated/api.ts` — generated Zod schemas (do not edit manually)
-- `lib/db/src/schema/` — Drizzle schema (nodes, notes, node_progress, achievements, users, exercises)
-- `artifacts/api-server/src/routes/` — Express route handlers (auth, nodes, notes, progress, exercises)
+- `lib/db/src/schema/` — Drizzle schema (nodes, notes, node_progress, achievements, users, exercises, social)
+- `lib/db/src/schema/social.ts` — friendships, friend_messages, social_notes tables
+- `artifacts/api-server/src/routes/` — Express route handlers (auth, nodes, notes, progress, exercises, social)
 - `artifacts/pap/src/components/MainApp.tsx` — full frontend (auth, tree, exercises, nav guide, Isa)
 
 ## Architecture decisions
@@ -42,6 +43,8 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - Achievement system: two per node (explored + read). Read triggered after 30s of modal open.
 - No `console.log` in server — use `req.log` in handlers, `logger` singleton elsewhere.
 - Isa owl: CSS/Framer Motion, personalized greeting by user name/tier, keyword-matched FUVEST responses.
+- Social routes (/api/social/*) bypass OpenAPI/codegen — use direct fetch + useQuery in SocialModal components. Not in openapi.yaml.
+- DB has both `password_plain` (legacy) and `password_hash` (bcrypt, active) columns. Auth uses `password_hash`. userCode is auto-generated on first /social/me call (lazy).
 
 ## Product
 
@@ -50,6 +53,7 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - Hierarchical knowledge tree (57 nodes FUVEST 2026), tier-gated with lock icons
 - AI-generated 3-question FUVEST-style MCQ exercises per node (Aluno I+ only)
 - Spaceship cockpit dashboard: notes, map, social panels
+- Social Area: profile (avatar/initials, score weighted by node depth × correct answers, user code), friends ring, chat com polling 5s, caderno compartilhado (shared notes between two users)
 - Menu panel: Status, Calendário, Insígnias, Guia (navigation guide) tabs
 - Activity heatmap calendar (last 90 days)
 - Ad totem column (collapsible) on the right
@@ -64,6 +68,8 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 ## Gotchas
 
 - `useListNodes()` with no args returns only nodes where `parentCode IS NULL` (i.e., just node "0"). Always pass `{ parentCode: "X" }` to fetch children.
+- Social notes unique constraint: stored as (min(u1,u2), max(u1,u2)) so upsert works. Use onConflictDoUpdate with target [user1Id, user2Id].
+- Score formula: for each correct exercise_attempt with userId → nodeCode.length × 10 pts. Only exercise_attempts has userId (node_progress/achievements are global/shared tables).
 - Orval zod output uses `mode: "single"` — generated schema names are PascalCase (e.g. `LoginBody`, not `loginBodySchema`).
 - `lib/api-zod/src/index.ts` must only export `./generated/api` (not a schemas folder).
 - Always run codegen after editing openapi.yaml.

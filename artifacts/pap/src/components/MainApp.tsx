@@ -53,7 +53,7 @@ import {
   CheckCircle,
   XCircle,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 
 /* ─── Auth Context ───────────────────────────────────────────────────────── */
 interface AuthCtx {
@@ -109,6 +109,7 @@ function MainAppInner({ queryClient }: { queryClient: ReturnType<typeof useQuery
   const [inverted, setInverted] = useState(false);
   const [newAchievement, setNewAchievement] = useState<{ title: string; type: string } | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [socialOpen, setSocialOpen] = useState(false);
   const { user } = useAuth();
 
   const handleAchievementEarned = (title: string, type: string) => {
@@ -136,7 +137,7 @@ function MainAppInner({ queryClient }: { queryClient: ReturnType<typeof useQuery
         <Totem />
       </div>
 
-      <SpaceshipDashboard activeNodeCode={activeNodeCode} />
+      <SpaceshipDashboard activeNodeCode={activeNodeCode} onSocialOpen={() => setSocialOpen(true)} />
 
       <AnimatePresence>
         {menuOpen && (
@@ -175,6 +176,12 @@ function MainAppInner({ queryClient }: { queryClient: ReturnType<typeof useQuery
       <AnimatePresence>
         {loginOpen && (
           <LoginModal onClose={() => setLoginOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {socialOpen && (
+          <SocialModal onClose={() => setSocialOpen(false)} />
         )}
       </AnimatePresence>
 
@@ -660,9 +667,8 @@ function Totem() {
 }
 
 /* ─── Spaceship Dashboard ────────────────────────────────────────────────── */
-function SpaceshipDashboard({ activeNodeCode }: { activeNodeCode: string | null }) {
+function SpaceshipDashboard({ activeNodeCode, onSocialOpen }: { activeNodeCode: string | null; onSocialOpen: () => void }) {
   const [leftOpen, setLeftOpen] = useState(false);
-  const [rightOpen, setRightOpen] = useState(false);
   const [activeTool, setActiveTool] = useState<"notes" | "calc" | "radio">("notes");
 
   const { data: progress } = useGetProgress();
@@ -777,7 +783,7 @@ function SpaceshipDashboard({ activeNodeCode }: { activeNodeCode: string | null 
       </div>
 
       <motion.button
-        onClick={() => setRightOpen(true)}
+        onClick={onSocialOpen}
         className="w-24 h-24 rounded-full flex flex-col items-center justify-center gap-1 border-4 border-muted overflow-hidden shrink-0"
         style={{ background: "radial-gradient(circle, hsl(var(--secondary)/0.15) 0%, black 70%)", boxShadow: "inset 0 0 20px rgba(255,255,255,0.05)" }}
         whileHover={{ scale: 1.05 }}
@@ -808,21 +814,6 @@ function SpaceshipDashboard({ activeNodeCode }: { activeNodeCode: string | null 
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {rightOpen && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }}
-            className="absolute bottom-36 right-3 w-72 h-72 rounded-full flex flex-col items-center justify-center border-2 border-secondary/60 z-30 overflow-hidden"
-            style={{ background: "hsl(var(--background)/0.97)", boxShadow: "0 0 40px hsl(var(--secondary)/0.4)" }}
-          >
-            <button onClick={() => setRightOpen(false)} className="absolute top-8 right-8 text-white/40 hover:text-white"><X className="w-4 h-4" /></button>
-            <User className="w-9 h-9 text-secondary mb-2" />
-            <p className="text-xs font-bold text-secondary tracking-widest uppercase mb-1">Area Social</p>
-            <p className="text-[11px] text-white/50 text-center px-14 leading-relaxed">Saia de casa e estude com amigos. O conhecimento cresce quando compartilhado.</p>
-            <p className="absolute bottom-10 text-[10px] text-white/30">Em desenvolvimento</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
@@ -1667,5 +1658,589 @@ function AchievementToast({ title, type }: { title: string; type: string }) {
         <p className="text-sm font-bold text-white">{title}</p>
       </div>
     </motion.div>
+  );
+}
+
+/* ─── Social Area ─────────────────────────────────────────────────────────── */
+const sfetch = (path: string, opts?: RequestInit) =>
+  fetch(`/api${path}`, {
+    credentials: "include",
+    ...opts,
+    headers: { "Content-Type": "application/json", ...(opts?.headers ?? {}) },
+  });
+
+interface SocialProfile {
+  id: number;
+  login: string;
+  displayName: string | null;
+  tier: number;
+  userCode: string;
+  score: number;
+  friendsCount: number;
+}
+interface SocialFriend {
+  id: number;
+  displayName: string | null;
+  tier: number;
+  userCode: string | null;
+  score: number;
+}
+interface SocialMessage {
+  id: number;
+  senderId: number;
+  receiverId: number;
+  content: string;
+  createdAt: string;
+}
+
+const AVATAR_HUES = [220, 270, 160, 45, 0, 320, 195, 25];
+function avatarStyle(id: number): React.CSSProperties {
+  const hue = AVATAR_HUES[id % AVATAR_HUES.length];
+  return { background: `hsl(${hue},65%,52%)`, color: hue === 45 ? "#1a1000" : "white" };
+}
+function avatarInitial(name: string | null | undefined, fallback?: string | null) {
+  return ((name ?? fallback ?? "?")[0] ?? "?").toUpperCase();
+}
+function fmtScore(n: number) {
+  return n.toLocaleString("pt-BR") + " pts";
+}
+
+/* Friends ring — up to 6 avatars arranged around center */
+function SAvatarRing({ friends, onSelect }: { friends: SocialFriend[]; onSelect: (f: SocialFriend) => void }) {
+  const shown = friends.slice(0, 6);
+  const n = shown.length;
+  const R = 88;
+  return (
+    <div className="relative" style={{ width: R * 2 + 52, height: R * 2 + 52 }}>
+      {shown.map((f, i) => {
+        const angle = n === 1 ? -Math.PI / 2 : (i / n) * 2 * Math.PI - Math.PI / 2;
+        const x = Math.cos(angle) * R + R + 2;
+        const y = Math.sin(angle) * R + R + 2;
+        return (
+          <motion.button
+            key={f.id}
+            style={{ position: "absolute", left: x, top: y, transform: "translate(-50%,-50%)", ...avatarStyle(f.id) }}
+            className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm border-2 border-white/20 shadow-lg"
+            whileHover={{ scale: 1.18 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={() => onSelect(f)}
+            title={f.displayName ?? f.userCode ?? "Amigo"}
+          >
+            {avatarInitial(f.displayName, f.userCode)}
+          </motion.button>
+        );
+      })}
+      {n === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="w-36 h-36 rounded-full border-2 border-dashed border-white/15 flex items-center justify-center">
+            <span className="text-[10px] text-white/25 text-center px-5 leading-relaxed">Adicione amigos para vê-los aqui</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Main Social Modal ─────────────────────────────────────────────────────── */
+function SocialModal({ onClose }: { onClose: () => void }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [view, setView] = useState<"profile" | "friends" | "friend-detail">("profile");
+  const [selectedFriend, setSelectedFriend] = useState<SocialFriend | null>(null);
+  const [editingCode, setEditingCode] = useState(false);
+  const [codeInput, setCodeInput] = useState("");
+  const [addInput, setAddInput] = useState("");
+  const [addMsg, setAddMsg] = useState("");
+  const [chatInput, setChatInput] = useState("");
+  const [sharedNote, setSharedNote] = useState("");
+  const [copied, setCopied] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const noteDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { data: profile, refetch: refetchProfile } = useQuery<SocialProfile>({
+    queryKey: ["social", "me"],
+    queryFn: () => sfetch("/social/me").then((r) => r.json()),
+    enabled: !!user,
+    staleTime: 30000,
+  });
+
+  const { data: friends = [], refetch: refetchFriends } = useQuery<SocialFriend[]>({
+    queryKey: ["social", "friends"],
+    queryFn: () => sfetch("/social/friends").then((r) => r.json()),
+    enabled: !!user,
+    staleTime: 15000,
+  });
+
+  const { data: messages = [] } = useQuery<SocialMessage[]>({
+    queryKey: ["social", "messages", selectedFriend?.id],
+    queryFn: () => sfetch(`/social/messages/${selectedFriend!.id}`).then((r) => r.json()),
+    enabled: !!selectedFriend && view === "friend-detail",
+    refetchInterval: 5000,
+  });
+
+  useEffect(() => {
+    if (view === "friend-detail" && selectedFriend) {
+      sfetch(`/social/shared-note/${selectedFriend.id}`)
+        .then((r) => r.json())
+        .then((d: { content: string }) => setSharedNote(d.content ?? ""));
+    }
+  }, [view, selectedFriend?.id]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleCopyCode = () => {
+    if (!profile?.userCode) return;
+    navigator.clipboard.writeText(profile.userCode).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2200);
+  };
+
+  const handleSaveCode = async () => {
+    if (!codeInput.trim()) return;
+    const r = await sfetch("/social/me", { method: "PATCH", body: JSON.stringify({ userCode: codeInput.trim().toLowerCase() }) });
+    const d = await r.json();
+    if (r.ok) { setEditingCode(false); setCodeInput(""); void refetchProfile(); }
+    else setAddMsg(d.error ?? "Erro ao salvar");
+  };
+
+  const handleAddFriend = async () => {
+    if (!addInput.trim()) return;
+    const r = await sfetch("/social/friends", { method: "POST", body: JSON.stringify({ userCode: addInput.trim().toLowerCase() }) });
+    const d = await r.json();
+    if (r.ok) { setAddInput(""); setAddMsg("Amigo adicionado!"); void refetchFriends(); setTimeout(() => setAddMsg(""), 3000); }
+    else setAddMsg(d.error ?? "Erro");
+  };
+
+  const handleRemoveFriend = async (friendId: number) => {
+    await sfetch(`/social/friends/${friendId}`, { method: "DELETE" });
+    void refetchFriends();
+    if (selectedFriend?.id === friendId) { setSelectedFriend(null); setView("profile"); }
+  };
+
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || !selectedFriend) return;
+    await sfetch(`/social/messages/${selectedFriend.id}`, { method: "POST", body: JSON.stringify({ content: chatInput.trim() }) });
+    setChatInput("");
+    void qc.invalidateQueries({ queryKey: ["social", "messages", selectedFriend.id] });
+  };
+
+  const handleNoteChange = (val: string) => {
+    setSharedNote(val);
+    if (noteDebounceRef.current) clearTimeout(noteDebounceRef.current);
+    noteDebounceRef.current = setTimeout(() => {
+      if (selectedFriend) void sfetch(`/social/shared-note/${selectedFriend.id}`, { method: "PUT", body: JSON.stringify({ content: val }) });
+    }, 1200);
+  };
+
+  const handleSelectFriend = (f: SocialFriend) => { setSelectedFriend(f); setView("friend-detail"); };
+
+  const goBack = () => {
+    if (view === "friend-detail") { setView(friends.length > 0 ? "friends" : "profile"); }
+    else { setView("profile"); }
+    setAddMsg("");
+  };
+
+  const titleMap: Record<typeof view, string> = {
+    profile: "Area Social",
+    friends: "Amigos",
+    "friend-detail": selectedFriend?.displayName ?? selectedFriend?.userCode ?? "Conversa",
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="absolute inset-0 bg-black/65 z-40 flex items-end justify-end p-4"
+      style={{ backdropFilter: "blur(8px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.88, y: 28, opacity: 0 }}
+        animate={{ scale: 1, y: 0, opacity: 1 }}
+        exit={{ scale: 0.88, y: 28, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 26 }}
+        className="w-80 max-h-[calc(100%-140px)] rounded-3xl flex flex-col overflow-hidden shadow-2xl"
+        style={{ background: "hsl(var(--background)/0.98)", border: "1px solid hsl(var(--secondary)/0.4)", boxShadow: "0 0 60px hsl(var(--secondary)/0.2)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-white/10 shrink-0">
+          {view !== "profile" && (
+            <button onClick={goBack} className="p-1 hover:bg-white/10 rounded-full transition-colors">
+              <ChevronDown className="w-4 h-4 text-white/50 rotate-90" />
+            </button>
+          )}
+          <span className="text-[11px] font-black tracking-widest text-secondary uppercase flex-1">{titleMap[view]}</span>
+          <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full transition-colors">
+            <X className="w-4 h-4 text-white/40" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto">
+          {!user ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-12 px-6">
+              <User className="w-10 h-10 text-white/20" />
+              <p className="text-sm text-white/40 text-center leading-relaxed">Faca login para acessar a Area Social</p>
+            </div>
+          ) : view === "profile" ? (
+            <SocialProfileView
+              profile={profile}
+              friends={friends as SocialFriend[]}
+              onManage={() => setView("friends")}
+              onSelect={handleSelectFriend}
+              onCopyCode={handleCopyCode}
+              copied={copied}
+              editingCode={editingCode}
+              setEditingCode={setEditingCode}
+              codeInput={codeInput}
+              setCodeInput={setCodeInput}
+              onSaveCode={handleSaveCode}
+              codeError={addMsg}
+            />
+          ) : view === "friends" ? (
+            <SocialFriendsView
+              profile={profile}
+              friends={friends as SocialFriend[]}
+              addInput={addInput}
+              setAddInput={setAddInput}
+              onAdd={handleAddFriend}
+              addMsg={addMsg}
+              onRemove={handleRemoveFriend}
+              onSelect={handleSelectFriend}
+              onCopyCode={handleCopyCode}
+              copied={copied}
+            />
+          ) : selectedFriend ? (
+            <SocialFriendDetail
+              friend={selectedFriend}
+              messages={messages as SocialMessage[]}
+              myId={user.id}
+              chatInput={chatInput}
+              setChatInput={setChatInput}
+              onSend={handleSendMessage}
+              sharedNote={sharedNote}
+              onNoteChange={handleNoteChange}
+              chatEndRef={chatEndRef}
+            />
+          ) : null}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ── Profile view ──────────────────────────────────────────────────────────── */
+function SocialProfileView({
+  profile, friends, onManage, onSelect, onCopyCode, copied,
+  editingCode, setEditingCode, codeInput, setCodeInput, onSaveCode, codeError,
+}: {
+  profile: SocialProfile | undefined;
+  friends: SocialFriend[];
+  onManage: () => void;
+  onSelect: (f: SocialFriend) => void;
+  onCopyCode: () => void;
+  copied: boolean;
+  editingCode: boolean;
+  setEditingCode: (v: boolean) => void;
+  codeInput: string;
+  setCodeInput: (v: string) => void;
+  onSaveCode: () => void;
+  codeError: string;
+}) {
+  const { user } = useAuth();
+  if (!profile) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <motion.div
+          className="w-8 h-8 rounded-full border-2 border-secondary border-t-transparent"
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-4 p-5 pb-6">
+      {/* Avatar */}
+      <div className="relative mt-1">
+        <div
+          className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-black shadow-xl border-4 border-white/10"
+          style={avatarStyle(profile.id)}
+        >
+          {avatarInitial(profile.displayName, profile.login)}
+        </div>
+        <div
+          className={`absolute -bottom-1 -right-1 px-2 py-0.5 rounded-full text-[9px] font-black border ${tierColor(profile.tier)}`}
+          style={{ background: "hsl(var(--background))", borderColor: "currentColor" }}
+        >
+          {tierLabel(profile.tier)}
+        </div>
+      </div>
+
+      {/* Name + score */}
+      <div className="text-center">
+        <p className="text-base font-black text-white">{profile.displayName ?? profile.login}</p>
+        <p className="text-xl font-black text-secondary mt-0.5">{fmtScore(profile.score)}</p>
+        <p className="text-[10px] text-white/35 mt-0.5">{profile.friendsCount} amigo{profile.friendsCount !== 1 ? "s" : ""}</p>
+      </div>
+
+      {/* User code */}
+      <div className="flex items-center gap-2">
+        {editingCode ? (
+          <div className="flex items-center gap-1.5">
+            <input
+              value={codeInput}
+              onChange={(e) => setCodeInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") onSaveCode(); if (e.key === "Escape") setEditingCode(false); }}
+              className="px-2.5 py-1 rounded-lg text-xs text-white outline-none border border-secondary/50 w-28"
+              style={{ background: "rgba(255,255,255,0.07)" }}
+              placeholder="novo codigo"
+              autoFocus
+            />
+            <button onClick={onSaveCode} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-secondary" style={{ background: "hsl(var(--secondary)/0.2)" }}>
+              OK
+            </button>
+            <button onClick={() => setEditingCode(false)}><X className="w-3 h-3 text-white/30" /></button>
+          </div>
+        ) : (
+          <>
+            <span
+              className="text-[11px] font-mono font-bold px-3 py-1 rounded-full border border-white/15 text-white/65"
+              style={{ background: "rgba(255,255,255,0.04)" }}
+            >
+              {profile.userCode}
+            </span>
+            <button onClick={onCopyCode} className="text-[10px] font-bold transition-colors" style={{ color: copied ? "hsl(var(--accent))" : "hsl(var(--secondary)/0.6)" }}>
+              {copied ? "Copiado!" : "Copiar"}
+            </button>
+            <button onClick={() => { setEditingCode(true); setCodeInput(profile.userCode); }} className="p-0.5 hover:opacity-70 transition-opacity">
+              <BookOpen className="w-3 h-3 text-white/25" />
+            </button>
+          </>
+        )}
+      </div>
+      {codeError && !editingCode && <p className="text-[10px] text-red-400 -mt-2">{codeError}</p>}
+
+      {/* Friends ring */}
+      <SAvatarRing friends={friends} onSelect={onSelect} />
+
+      {/* Manage button */}
+      <motion.button
+        onClick={onManage}
+        className="w-full py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest border border-secondary/35 text-secondary"
+        style={{ background: "hsl(var(--secondary)/0.08)" }}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.97 }}
+      >
+        Gerenciar Amigos
+      </motion.button>
+    </div>
+  );
+}
+
+/* ── Friends management view ───────────────────────────────────────────────── */
+function SocialFriendsView({
+  profile, friends, addInput, setAddInput, onAdd, addMsg,
+  onRemove, onSelect, onCopyCode, copied,
+}: {
+  profile: SocialProfile | undefined;
+  friends: SocialFriend[];
+  addInput: string;
+  setAddInput: (v: string) => void;
+  onAdd: () => void;
+  addMsg: string;
+  onRemove: (id: number) => void;
+  onSelect: (f: SocialFriend) => void;
+  onCopyCode: () => void;
+  copied: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-4 p-5">
+      {/* My code */}
+      {profile && (
+        <div className="p-3 rounded-xl border border-white/10 flex flex-col gap-1.5" style={{ background: "rgba(255,255,255,0.03)" }}>
+          <p className="text-[9px] uppercase tracking-widest text-white/30 font-bold">Meu codigo</p>
+          <div className="flex items-center gap-2">
+            <span className="font-mono font-bold text-sm text-secondary">{profile.userCode}</span>
+            <button onClick={onCopyCode} className="text-[10px] font-bold ml-auto transition-colors" style={{ color: copied ? "hsl(var(--accent))" : "rgba(255,255,255,0.3)" }}>
+              {copied ? "Copiado!" : "Copiar"}
+            </button>
+          </div>
+          <p className="text-[9px] text-white/20 leading-relaxed">Compartilhe para que amigos te adicionem</p>
+        </div>
+      )}
+
+      {/* Add friend */}
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[9px] uppercase tracking-widest text-white/30 font-bold">Adicionar amigo</p>
+        <div className="flex gap-1.5">
+          <input
+            value={addInput}
+            onChange={(e) => setAddInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") onAdd(); }}
+            className="flex-1 px-3 py-2 rounded-xl text-xs text-white outline-none border border-white/12 focus:border-secondary/50 transition-colors"
+            style={{ background: "rgba(255,255,255,0.05)" }}
+            placeholder="codigo do amigo"
+          />
+          <motion.button
+            onClick={onAdd}
+            className="px-3.5 py-2 rounded-xl text-sm font-black"
+            style={{ background: "hsl(var(--secondary))", color: "white" }}
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.94 }}
+          >
+            +
+          </motion.button>
+        </div>
+        {addMsg && (
+          <p className={`text-[10px] font-medium ${addMsg.includes("adicionado") ? "text-accent" : "text-red-400"}`}>
+            {addMsg}
+          </p>
+        )}
+      </div>
+
+      {/* Friends list */}
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[9px] uppercase tracking-widest text-white/30 font-bold mb-0.5">Amigos ({friends.length})</p>
+        {friends.length === 0 ? (
+          <div className="text-center py-5">
+            <User className="w-8 h-8 text-white/12 mx-auto mb-2" />
+            <p className="text-xs text-white/30">Nenhum amigo ainda.</p>
+          </div>
+        ) : (
+          friends.map((f) => (
+            <div
+              key={f.id}
+              className="flex items-center gap-2.5 p-2.5 rounded-xl border border-white/8 hover:border-white/15 transition-colors cursor-pointer"
+              style={{ background: "rgba(255,255,255,0.02)" }}
+              onClick={() => onSelect(f)}
+            >
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center font-black text-sm shrink-0"
+                style={avatarStyle(f.id)}
+              >
+                {avatarInitial(f.displayName, f.userCode)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-white truncate">{f.displayName ?? f.userCode}</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className={`text-[9px] font-bold ${tierColor(f.tier)}`}>{tierLabel(f.tier)}</span>
+                  <span className="text-[9px] text-white/25">·</span>
+                  <span className="text-[9px] font-bold" style={{ color: "hsl(var(--secondary)/0.8)" }}>{fmtScore(f.score)}</span>
+                </div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); void onRemove(f.id); }}
+                className="p-1.5 hover:bg-white/10 rounded-full transition-colors text-white/25 hover:text-red-400"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Friend detail: chat + shared notepad ──────────────────────────────────── */
+function SocialFriendDetail({
+  friend, messages, myId, chatInput, setChatInput, onSend,
+  sharedNote, onNoteChange, chatEndRef,
+}: {
+  friend: SocialFriend;
+  messages: SocialMessage[];
+  myId: number;
+  chatInput: string;
+  setChatInput: (v: string) => void;
+  onSend: () => void;
+  sharedNote: string;
+  onNoteChange: (v: string) => void;
+  chatEndRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <div className="flex flex-col">
+      {/* Friend header */}
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-white/8 shrink-0">
+        <div
+          className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0"
+          style={avatarStyle(friend.id)}
+        >
+          {avatarInitial(friend.displayName, friend.userCode)}
+        </div>
+        <div>
+          <p className="text-sm font-black text-white">{friend.displayName ?? friend.userCode}</p>
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[9px] font-bold ${tierColor(friend.tier)}`}>{tierLabel(friend.tier)}</span>
+            <span className="text-[9px] text-white/25">·</span>
+            <span className="text-[9px] font-bold" style={{ color: "hsl(var(--secondary)/0.8)" }}>{fmtScore(friend.score)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Chat messages */}
+      <div
+        className="h-48 overflow-y-auto flex flex-col gap-1.5 px-4 py-3"
+        style={{ background: "rgba(0,0,0,0.25)" }}
+      >
+        {messages.length === 0 && (
+          <p className="text-[10px] text-white/20 text-center mt-10">Nenhuma mensagem. Diga oi!</p>
+        )}
+        {messages.map((m) => (
+          <div key={m.id} className={`flex ${m.senderId === myId ? "justify-end" : "justify-start"}`}>
+            <div
+              className="max-w-[80%] px-3 py-1.5 text-[11px] leading-relaxed"
+              style={{
+                background: m.senderId === myId ? "hsl(var(--secondary)/0.35)" : "rgba(255,255,255,0.09)",
+                color: "rgba(255,255,255,0.87)",
+                borderRadius: m.senderId === myId ? "14px 14px 3px 14px" : "14px 14px 14px 3px",
+              }}
+            >
+              {m.content}
+            </div>
+          </div>
+        ))}
+        <div ref={chatEndRef} />
+      </div>
+
+      {/* Message input */}
+      <div className="flex items-center gap-2 px-4 py-2.5 border-t border-white/8">
+        <input
+          value={chatInput}
+          onChange={(e) => setChatInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void onSend(); } }}
+          className="flex-1 bg-transparent text-xs text-white outline-none placeholder:text-white/20"
+          placeholder="Mensagem..."
+          autoFocus
+        />
+        <motion.button
+          onClick={() => void onSend()}
+          className="p-1.5 rounded-full shrink-0"
+          style={{ background: "hsl(var(--secondary)/0.35)" }}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+        >
+          <ChevronUp className="w-3.5 h-3.5 text-secondary" />
+        </motion.button>
+      </div>
+
+      {/* Shared notepad */}
+      <div className="flex flex-col gap-1.5 px-4 pt-2 pb-4 border-t border-white/8">
+        <p className="text-[9px] uppercase tracking-widest text-white/25 font-bold flex items-center gap-1.5">
+          <FileText className="w-3 h-3" />
+          Caderno compartilhado
+        </p>
+        <textarea
+          value={sharedNote}
+          onChange={(e) => onNoteChange(e.target.value)}
+          className="w-full h-24 resize-none outline-none text-[11px] text-white/70 placeholder:text-white/18 leading-relaxed rounded-xl px-2.5 py-2 border border-white/8"
+          style={{ background: "rgba(255,255,255,0.03)" }}
+          placeholder="Anotacoes compartilhadas com este amigo..."
+        />
+      </div>
+    </div>
   );
 }
