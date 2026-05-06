@@ -1,14 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db, nodesTable } from "@workspace/db";
 import { ListNodesQueryParams, GetNodeParams } from "@workspace/api-zod";
+import { canAccess } from "../lib/canAccess";
 
 const router: IRouter = Router();
-
-function canAccess(code: string, tier: number): boolean {
-  if (tier >= 2) return true;
-  if (tier === 1) return code.length <= 4;
-  return code.length <= 3;
-}
 
 router.get("/nodes", async (req, res): Promise<void> => {
   const query = ListNodesQueryParams.safeParse(req.query);

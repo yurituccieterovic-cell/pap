@@ -1,10 +1,37 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { nodesTable, exercisesTable, exerciseAttemptsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { canAccess } from "../lib/canAccess";
 
 const router = Router();
+
+const generationInProgress = new Set<string>();
+
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+const GENERATION_RATE_MAX = 5;
+const userGenerationCounts = new Map<number, { count: number; windowStart: number }>();
+
+const ATTEMPT_RATE_MAX = 60;
+const userAttemptCounts = new Map<number, { count: number; windowStart: number }>();
+
+function checkRateLimit(
+  map: Map<number, { count: number; windowStart: number }>,
+  userId: number,
+  max: number,
+): boolean {
+  const now = Date.now();
+  const entry = map.get(userId);
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    map.set(userId, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= max) return false;
+  entry.count += 1;
+  return true;
+}
 
 async function generateExercises(nodeCode: string, nodeTitle: string, nodeContent: string | null) {
   const prompt = `Você é um professor especialista no vestibular FUVEST. Crie exatamente 3 questões de múltipla escolha sobre o tema: "${nodeTitle}".
@@ -62,9 +89,25 @@ Retorne SOMENTE o array JSON, sem texto adicional, sem markdown.`;
 }
 
 router.get("/exercises", async (req, res) => {
+  if (!req.session.userId) {
+    res.status(401).json({ error: "Autenticação necessária" });
+    return;
+  }
+
+  const tier = req.session.userTier ?? 0;
+  if (tier < 1) {
+    res.status(403).json({ error: "Exercícios disponíveis a partir do nível Aluno I" });
+    return;
+  }
+
   const nodeCode = String(req.query["nodeCode"] ?? "");
   if (!nodeCode) {
     res.status(400).json({ error: "nodeCode obrigatório" });
+    return;
+  }
+
+  if (!canAccess(nodeCode, tier)) {
+    res.status(403).json({ error: "Acesso negado para o seu nível de conta" });
     return;
   }
 
@@ -86,13 +129,27 @@ router.get("/exercises", async (req, res) => {
     .limit(3);
 
   if (exercises.length < 3) {
-    try {
-      exercises = await generateExercises(nodeCode, node.title, node.content);
-    } catch (err) {
-      req.log.error({ err }, "Failed to generate exercises");
+    if (generationInProgress.has(nodeCode)) {
       if (exercises.length === 0) {
-        res.status(503).json({ error: "Não foi possível gerar exercícios agora" });
+        res.status(503).json({ error: "Exercícios sendo gerados, tente novamente em instantes" });
         return;
+      }
+    } else {
+      if (!checkRateLimit(userGenerationCounts, req.session.userId, GENERATION_RATE_MAX)) {
+        res.status(429).json({ error: "Muitas requisições de geração. Tente novamente em breve." });
+        return;
+      }
+      generationInProgress.add(nodeCode);
+      try {
+        exercises = await generateExercises(nodeCode, node.title, node.content);
+      } catch (err) {
+        req.log.error({ err }, "Failed to generate exercises");
+        if (exercises.length === 0) {
+          res.status(503).json({ error: "Não foi possível gerar exercícios agora" });
+          return;
+        }
+      } finally {
+        generationInProgress.delete(nodeCode);
       }
     }
   }
@@ -108,6 +165,22 @@ router.get("/exercises", async (req, res) => {
 });
 
 router.post("/exercises/attempt", async (req, res) => {
+  if (!req.session.userId) {
+    res.status(401).json({ error: "Autenticação necessária" });
+    return;
+  }
+
+  const tier = req.session.userTier ?? 0;
+  if (tier < 1) {
+    res.status(403).json({ error: "Exercícios disponíveis a partir do nível Aluno I" });
+    return;
+  }
+
+  if (!checkRateLimit(userAttemptCounts, req.session.userId, ATTEMPT_RATE_MAX)) {
+    res.status(429).json({ error: "Muitas tentativas. Tente novamente em breve." });
+    return;
+  }
+
   const { exerciseId, selectedOption } = req.body as { exerciseId: number; selectedOption: number };
 
   if (exerciseId === undefined || selectedOption === undefined) {
@@ -126,10 +199,15 @@ router.post("/exercises/attempt", async (req, res) => {
     return;
   }
 
+  if (!canAccess(exercise.nodeCode, tier)) {
+    res.status(403).json({ error: "Acesso negado para o seu nível de conta" });
+    return;
+  }
+
   const correct = selectedOption === exercise.correctOption ? 1 : 0;
 
   await db.insert(exerciseAttemptsTable).values({
-    userId: req.session.userId ?? null,
+    userId: req.session.userId,
     exerciseId,
     nodeCode: exercise.nodeCode,
     selectedOption,
