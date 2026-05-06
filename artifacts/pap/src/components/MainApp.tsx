@@ -82,6 +82,8 @@ export function MainApp() {
         )}
       </AnimatePresence>
 
+      <IsaOwl />
+
       <AnimatePresence>
         {activeNodeCode && (
           <NodeModal
@@ -859,6 +861,384 @@ function NodeModal({ code, onClose, onNodeOpen, onAchievementEarned }: {
         )}
       </motion.div>
     </motion.div>
+  );
+}
+
+/* ─── Isa Owl Mascot ─────────────────────────────────────────────────────── */
+function getIsaResponse(msg: string): string {
+  const m = msg.toLowerCase();
+  if (m.includes("fuvest")) return "A FUVEST 2026 tem duas fases. A 1ª fase cobre todas as matérias com 90 questões. A 2ª fase tem redação e questões discursivas por área!";
+  if (m.includes("física") || m.includes("fisica")) return "Física na FUVEST: Mecânica, Termodinâmica, Óptica, Eletromagnetismo e Física Moderna. Comece pela Mecânica — é a base de tudo!";
+  if (m.includes("química") || m.includes("quimica")) return "Química tem muito peso na FUVEST! Foque em Química Orgânica (funções e reações) e Físico-Química (equilíbrio e eletroquímica).";
+  if (m.includes("matemát") || m.includes("mat")) return "Matemática: domine Álgebra e Funções primeiro. Geometria e Probabilidade também caem bastante. Pratique com questões antigas!";
+  if (m.includes("biolog") || m.includes("bio")) return "Biologia FUVEST: Fisiologia humana e Ecologia têm grande peso. Botânica também é cobrada. Estude os sistemas do corpo com atenção!";
+  if (m.includes("histór") || m.includes("hist")) return "História: estude os grandes processos — Revolução Industrial, Imperialismo, Guerras Mundiais, Brasil República e Ditadura Militar.";
+  if (m.includes("geograf") || m.includes("geo")) return "Geografia cobre muito: Geopolítica, Urbanização, Biomas brasileiros e Globalização. Mapas e dados estatísticos são frequentes!";
+  if (m.includes("filosofia") || m.includes("fil")) return "Filosofia na FUVEST: Platão, Aristóteles, Kant, Marx e Nietzsche são os mais cobrados. Leia os textos filosóficos com calma.";
+  if (m.includes("sociolog") || m.includes("soc")) return "Sociologia: Durkheim, Marx e Weber são essenciais. Temas como desigualdade, cultura e trabalho também caem muito.";
+  if (m.includes("portugu") || m.includes("port")) return "Português: gramática, interpretação de texto e Literatura são fundamentais. Leia os autores do modernismo brasileiro — Drummond, Guimarães Rosa!";
+  if (m.includes("inglês") || m.includes("ingles") || m.includes("ing")) return "Inglês na FUVEST é somente leitura e interpretação. Foque em vocabulário e estrutura de textos em inglês. Não é conversação!";
+  if (m.includes("arte")) return "Arte na FUVEST abrange artes visuais, teatro, dança e música. Movimentos artísticos brasileiros e história da arte são os mais cobrados.";
+  if (m.includes("dica") || m.includes("estud")) return "Dica de ouro: resolva provas antigas da FUVEST! Isso mostra o padrão das questões. Divida seu tempo por matéria e revise regularmente.";
+  if (m.includes("redação") || m.includes("redacao") || m.includes("red")) return "Redação na 2ª fase: texto dissertativo-argumentativo. Tenha uma tese clara, argumentos bem desenvolvidos e uma conclusão propositiva.";
+  if (m.includes("oi") || m.includes("olá") || m.includes("ola")) return "Oi! Sou a Isa, sua coruja guia no PAP. Estou aqui para te ajudar com dúvidas sobre matérias da FUVEST. O que quer saber?";
+  if (m.includes("obrigad")) return "De nada, explorador! Continue estudando com dedicação. Cada nó que você explora é um passo a mais rumo à USP!";
+  if (m.includes("usp")) return "USP é uma das melhores universidades do mundo! A FUVEST é o vestibular exclusivo da USP. Vale cada hora de estudo!";
+  return "Boa pergunta! Explore os nós do mapa para aprofundar esse tema. Se quiser dicas sobre uma matéria específica, é só perguntar!";
+}
+
+function IsaOwl() {
+  const [phase, setPhase] = useState<"flying" | "perched" | "bubble" | "chat">("flying");
+  const [wingFlap, setWingFlap] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatHistory, setChatHistory] = useState<Array<{ who: "isa" | "user"; text: string }>>([]);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12 ? "Bom dia, explorador!" : hour < 18 ? "Boa tarde, explorador!" : "Boa noite, explorador!";
+
+  useEffect(() => {
+    const t = setTimeout(() => setPhase("perched"), 300);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (phase !== "perched") return;
+    const t = setTimeout(() => setPhase("bubble"), 1400);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatHistory]);
+
+  const handleClick = () => {
+    if (phase === "perched" || phase === "bubble") {
+      setPhase("chat");
+    } else if (phase === "chat") {
+      setWingFlap(true);
+      setTimeout(() => setWingFlap(false), 700);
+    }
+  };
+
+  const handleChat = (msg: string) => {
+    if (!msg.trim()) return;
+    const response = getIsaResponse(msg);
+    setChatHistory((h) => [
+      ...h,
+      { who: "user", text: msg },
+      { who: "isa", text: response },
+    ]);
+    setChatInput("");
+  };
+
+  const wingAnim = wingFlap
+    ? { rotate: [-28, 28, -28, 0] as number[] }
+    : { rotate: [0, -4, 0] as number[] };
+  const wingTransition = wingFlap
+    ? { duration: 0.35, repeat: 1 }
+    : { duration: 3, repeat: Infinity, ease: "easeInOut" as const };
+
+  return (
+    <div
+      className="absolute pointer-events-none"
+      style={{ bottom: 132, left: 12, zIndex: 25 }}
+    >
+      {/* Owl */}
+      <motion.div
+        onClick={handleClick}
+        initial={{ y: -280, x: -60, opacity: 0, rotate: -20 }}
+        animate={
+          phase !== "flying"
+            ? { y: 0, x: 0, opacity: 1, rotate: 0 }
+            : { y: -280, x: -60, opacity: 0, rotate: -20 }
+        }
+        transition={{ type: "spring", stiffness: 90, damping: 14, delay: 0.2 }}
+        className="relative cursor-pointer pointer-events-auto"
+        style={{ width: 48, height: 56 }}
+        title="Isa — clique para conversar"
+      >
+        {/* Idle body bob */}
+        <motion.div
+          className="absolute inset-0"
+          animate={{ y: [0, -3, 0] }}
+          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+        >
+          {/* Left wing */}
+          <motion.div
+            className="absolute"
+            style={{
+              top: 16,
+              left: -11,
+              width: 15,
+              height: 24,
+              background: "hsl(var(--primary))",
+              borderRadius: "50% 10% 60% 40%",
+              transformOrigin: "right center",
+              opacity: 0.9,
+            }}
+            animate={wingAnim}
+            transition={wingTransition}
+          />
+          {/* Right wing */}
+          <motion.div
+            className="absolute"
+            style={{
+              top: 16,
+              right: -11,
+              width: 15,
+              height: 24,
+              background: "hsl(var(--primary))",
+              borderRadius: "10% 50% 40% 60%",
+              transformOrigin: "left center",
+              opacity: 0.9,
+            }}
+            animate={
+              wingFlap
+                ? { rotate: [28, -28, 28, 0] as number[] }
+                : { rotate: [0, 4, 0] as number[] }
+            }
+            transition={wingTransition}
+          />
+
+          {/* Body */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(160deg, hsl(var(--primary)/0.95) 0%, hsl(var(--primary)/0.6) 100%)",
+              borderRadius: "42% 42% 50% 50%",
+              border: "1.5px solid hsl(var(--primary)/0.7)",
+            }}
+          />
+          {/* Belly disc */}
+          <div
+            className="absolute"
+            style={{
+              top: 8,
+              left: 8,
+              right: 8,
+              bottom: 14,
+              background: "rgba(255,255,255,0.13)",
+              borderRadius: "50%",
+            }}
+          />
+          {/* Ear tufts */}
+          <div
+            className="absolute"
+            style={{
+              top: -5,
+              left: 9,
+              width: 7,
+              height: 9,
+              background: "hsl(var(--primary))",
+              borderRadius: "50% 50% 0 0",
+              transform: "rotate(-15deg)",
+            }}
+          />
+          <div
+            className="absolute"
+            style={{
+              top: -5,
+              right: 9,
+              width: 7,
+              height: 9,
+              background: "hsl(var(--primary))",
+              borderRadius: "50% 50% 0 0",
+              transform: "rotate(15deg)",
+            }}
+          />
+          {/* Eyes */}
+          <div className="absolute flex gap-1.5" style={{ top: 12, left: 9 }}>
+            <motion.div
+              className="w-4 h-4 rounded-full bg-white flex items-center justify-center shadow-sm"
+              animate={{ scaleY: [1, 0.12, 1] }}
+              transition={{ duration: 4, repeat: Infinity, repeatDelay: 2.5 }}
+            >
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-900" />
+            </motion.div>
+            <motion.div
+              className="w-4 h-4 rounded-full bg-white flex items-center justify-center shadow-sm"
+              animate={{ scaleY: [1, 0.12, 1] }}
+              transition={{ duration: 4, repeat: Infinity, repeatDelay: 2.5 }}
+            >
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-900" />
+            </motion.div>
+          </div>
+          {/* Beak */}
+          <div
+            className="absolute"
+            style={{
+              top: 24,
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: 0,
+              height: 0,
+              borderLeft: "4px solid transparent",
+              borderRight: "4px solid transparent",
+              borderTop: "7px solid hsl(45,90%,58%)",
+            }}
+          />
+          {/* Feet */}
+          <div
+            className="absolute flex gap-1.5"
+            style={{ bottom: -5, left: "50%", transform: "translateX(-50%)" }}
+          >
+            <div
+              style={{
+                width: 9,
+                height: 5,
+                background: "hsl(45,90%,58%)",
+                borderRadius: "0 0 5px 5px",
+              }}
+            />
+            <div
+              style={{
+                width: 9,
+                height: 5,
+                background: "hsl(45,90%,58%)",
+                borderRadius: "0 0 5px 5px",
+              }}
+            />
+          </div>
+        </motion.div>
+      </motion.div>
+
+      {/* Speech bubble */}
+      <AnimatePresence>
+        {phase === "bubble" && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.6, x: -8 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            exit={{ opacity: 0, scale: 0.6 }}
+            className="absolute cursor-pointer pointer-events-auto px-3 py-2 rounded-xl text-[11px] font-bold"
+            style={{
+              bottom: 60,
+              left: 54,
+              whiteSpace: "nowrap",
+              background: "hsl(var(--primary))",
+              color: "white",
+              boxShadow: "0 4px 20px hsl(var(--primary)/0.5)",
+            }}
+            onClick={() => setPhase("chat")}
+          >
+            {greeting}
+            {/* Tail */}
+            <div
+              className="absolute"
+              style={{
+                bottom: -6,
+                left: 14,
+                width: 0,
+                height: 0,
+                borderLeft: "6px solid transparent",
+                borderRight: "6px solid transparent",
+                borderTop: "6px solid hsl(var(--primary))",
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Chat panel */}
+      <AnimatePresence>
+        {phase === "chat" && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.85, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.85, y: 8 }}
+            className="absolute flex flex-col rounded-2xl border overflow-hidden pointer-events-auto"
+            style={{
+              bottom: 60,
+              left: 54,
+              width: 224,
+              height: 230,
+              background: "hsl(var(--background)/0.98)",
+              borderColor: "hsl(var(--primary)/0.4)",
+              boxShadow: "0 8px 32px hsl(var(--primary)/0.3)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              className="flex items-center gap-2 px-3 py-2 border-b shrink-0"
+              style={{
+                borderColor: "hsl(var(--primary)/0.2)",
+                background: "hsl(var(--primary)/0.12)",
+              }}
+            >
+              <motion.div
+                className="w-5 h-5 rounded-full border border-primary/60"
+                style={{ background: "hsl(var(--primary)/0.3)" }}
+                animate={{ scale: [1, 1.15, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              />
+              <span className="text-[10px] font-black tracking-widest text-primary uppercase">Isa</span>
+              <span className="text-[10px] text-white/35">· Coruja Guia</span>
+              <button
+                onClick={() => setPhase("perched")}
+                className="ml-auto text-white/30 hover:text-white transition-colors"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-auto p-2 flex flex-col gap-1.5">
+              {chatHistory.length === 0 && (
+                <p className="text-[10px] text-white/40 text-center mt-3 leading-relaxed px-2">
+                  {greeting}
+                  <br />
+                  Pergunte sobre FUVEST, matérias ou dicas!
+                </p>
+              )}
+              {chatHistory.map((m, i) => (
+                <div key={i} className={`flex ${m.who === "user" ? "justify-end" : "justify-start"}`}>
+                  <span
+                    className="text-[10px] px-2 py-1.5 rounded-xl max-w-[88%] leading-relaxed"
+                    style={{
+                      background:
+                        m.who === "isa"
+                          ? "hsl(var(--primary)/0.18)"
+                          : "hsl(var(--secondary)/0.2)",
+                      color: "rgba(255,255,255,0.87)",
+                    }}
+                  >
+                    {m.text}
+                  </span>
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input */}
+            <form
+              className="flex items-center gap-1.5 px-2 py-2 border-t shrink-0"
+              style={{ borderColor: "hsl(var(--primary)/0.18)" }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleChat(chatInput);
+              }}
+            >
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                className="flex-1 bg-transparent text-[10px] text-white outline-none placeholder:text-white/25"
+                placeholder="Pergunte à Isa..."
+                autoFocus
+              />
+              <button
+                type="submit"
+                className="text-primary hover:opacity-70 transition-opacity"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
