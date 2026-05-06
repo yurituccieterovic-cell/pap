@@ -37,7 +37,7 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - Contract-first API: OpenAPI spec → codegen → React Query hooks and Zod schemas. Never write API types by hand.
 - Square viewport (≈900×900px) enforced in `App.tsx` with black bars on desktop.
 - Knowledge tree root is tier-aware: tier ≥ 4 → root "0" (all branches); tier < 4 → root "1" (Ciências only). Lock enforced server-side via `canAccess(tier, code)`.
-- Auth: express-session with plaintext passwords (demo only). 6 users: guest/aluno1-4/root, all password "pap".
+- Auth: express-session with bcrypt-hashed passwords (cost 12). 6 users: guest/aluno1-4/root, all password "pap". Passwords are never stored or compared in plaintext.
 - Exercises: AI-generated via OpenAI (3 MCQ per node), cached in DB, submitted attempts tracked.
 - Achievement system: two per node (explored + read). Read triggered after 30s of modal open.
 - No `console.log` in server — use `req.log` in handlers, `logger` singleton elsewhere.

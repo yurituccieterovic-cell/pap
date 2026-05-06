@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { LoginBody } from "@workspace/api-zod";
+import bcrypt from "bcryptjs";
 
 const router = Router();
 
@@ -20,7 +21,11 @@ router.post("/auth/login", async (req, res) => {
     .where(eq(usersTable.login, login))
     .limit(1);
 
-  if (!user || user.passwordPlain !== password) {
+  const passwordValid =
+    user && typeof user.passwordHash === "string" && user.passwordHash.length > 0
+      ? await bcrypt.compare(password, user.passwordHash)
+      : false;
+  if (!user || !passwordValid) {
     res.status(401).json({ error: "Login ou senha incorretos" });
     return;
   }
