@@ -3,10 +3,14 @@ import healthRouter from "./health";
 import nodesRouter from "./nodes";
 import notesRouter from "./notes";
 import progressRouter from "./progress";
+import authRouter from "./auth";
+import exercisesRouter from "./exercises";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(authRouter);
+router.use(exercisesRouter);
 router.use(nodesRouter);
 router.use(notesRouter);
 router.use(progressRouter);

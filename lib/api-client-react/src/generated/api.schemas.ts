@@ -27,6 +27,8 @@ export interface Node {
   childCount: number;
   /** Depth level in the tree */
   level: number;
+  /** Whether this node is locked for the current user tier */
+  locked: boolean;
 }
 
 export interface NodeDetail {
@@ -115,6 +117,43 @@ export interface Summary {
   recentlyOpened: Node[];
 }
 
+export interface LoginBody {
+  login: string;
+  password: string;
+}
+
+export interface CurrentUser {
+  id: number;
+  login: string;
+  /** 0=guest 1=aluno1 2=aluno2 3=aluno3 4=aluno4 5=root/dev */
+  tier: number;
+  /** @nullable */
+  displayName: string | null;
+}
+
+export interface MeResponse {
+  user: CurrentUser | null;
+}
+
+export interface ExerciseQuestion {
+  id: number;
+  nodeCode: string;
+  question: string;
+  options: string[];
+}
+
+export interface ExerciseAttemptBody {
+  exerciseId: number;
+  selectedOption: number;
+}
+
+export interface ExerciseAttemptResult {
+  correct: boolean;
+  correctOption: number;
+  /** @nullable */
+  explanation: string | null;
+}
+
 export type ListNodesParams = {
   /**
    * Parent node code to list children of
@@ -127,4 +166,11 @@ export type ListNotesParams = {
    * Filter notes by node code/subject
    */
   nodeCode?: string;
+};
+
+export type GetExercisesParams = {
+  /**
+   * Node code to get exercises for
+   */
+  nodeCode: string;
 };

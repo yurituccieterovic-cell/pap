@@ -37,6 +37,9 @@ export const ListNodesResponseItem = zod.object({
   parentCode: zod.string().nullable(),
   childCount: zod.number(),
   level: zod.number().describe("Depth level in the tree"),
+  locked: zod
+    .boolean()
+    .describe("Whether this node is locked for the current user tier"),
 });
 export const ListNodesResponse = zod.array(ListNodesResponseItem);
 
@@ -68,6 +71,9 @@ export const GetNodeResponse = zod.object({
       parentCode: zod.string().nullable(),
       childCount: zod.number(),
       level: zod.number().describe("Depth level in the tree"),
+      locked: zod
+        .boolean()
+        .describe("Whether this node is locked for the current user tier"),
     }),
   ),
   level: zod.number(),
@@ -96,6 +102,9 @@ export const GetSummaryResponse = zod.object({
       parentCode: zod.string().nullable(),
       childCount: zod.number(),
       level: zod.number().describe("Depth level in the tree"),
+      locked: zod
+        .boolean()
+        .describe("Whether this node is locked for the current user tier"),
     }),
   ),
 });
@@ -262,3 +271,66 @@ export const GetDailyActivityResponseItem = zod.object({
   count: zod.number().describe("Number of nodes interacted with on that day"),
 });
 export const GetDailyActivityResponse = zod.array(GetDailyActivityResponseItem);
+
+/**
+ * @summary Login with username and password
+ */
+export const LoginBody = zod.object({
+  login: zod.string(),
+  password: zod.string(),
+});
+
+export const LoginResponse = zod.object({
+  id: zod.number(),
+  login: zod.string(),
+  tier: zod
+    .number()
+    .describe("0=guest 1=aluno1 2=aluno2 3=aluno3 4=aluno4 5=root\/dev"),
+  displayName: zod.string().nullable(),
+});
+
+/**
+ * @summary Get current authenticated user
+ */
+export const GetMeResponse = zod.object({
+  user: zod.union([
+    zod.object({
+      id: zod.number(),
+      login: zod.string(),
+      tier: zod
+        .number()
+        .describe("0=guest 1=aluno1 2=aluno2 3=aluno3 4=aluno4 5=root\/dev"),
+      displayName: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+});
+
+/**
+ * @summary Get 3 practice exercises for a node (AI-generated if needed)
+ */
+export const GetExercisesQueryParams = zod.object({
+  nodeCode: zod.coerce.string().describe("Node code to get exercises for"),
+});
+
+export const GetExercisesResponseItem = zod.object({
+  id: zod.number(),
+  nodeCode: zod.string(),
+  question: zod.string(),
+  options: zod.array(zod.string()),
+});
+export const GetExercisesResponse = zod.array(GetExercisesResponseItem);
+
+/**
+ * @summary Submit an exercise answer
+ */
+export const SubmitAttemptBody = zod.object({
+  exerciseId: zod.number(),
+  selectedOption: zod.number(),
+});
+
+export const SubmitAttemptResponse = zod.object({
+  correct: zod.boolean(),
+  correctOption: zod.number(),
+  explanation: zod.string().nullable(),
+});

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, createContext, useContext } from "react";
 import {
   useGetSummary,
   useListNodes,
@@ -12,14 +12,20 @@ import {
   useDeleteNote,
   useListAchievements,
   useGetDailyActivity,
+  useGetMe,
+  useLogin,
+  useLogout,
+  useGetExercises,
+  useSubmitAttempt,
   getGetSummaryQueryKey,
   getListNodesQueryKey,
   getGetProgressQueryKey,
   getListAchievementsQueryKey,
   getListNotesQueryKey,
   getGetDailyActivityQueryKey,
+  getGetMeQueryKey,
 } from "@workspace/api-client-react";
-import type { Node as KNode } from "@workspace/api-client-react";
+import type { Node as KNode, CurrentUser, ExerciseQuestion } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Menu,
@@ -37,17 +43,73 @@ import {
   Eye,
   Trash2,
   GitBranch,
+  Lock,
+  LogIn,
+  LogOut,
+  HelpCircle,
+  Zap,
+  Map,
+  Bell,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
+/* ─── Auth Context ───────────────────────────────────────────────────────── */
+interface AuthCtx {
+  user: CurrentUser | null;
+  isLoading: boolean;
+  refetch: () => void;
+}
+const AuthContext = createContext<AuthCtx>({ user: null, isLoading: true, refetch: () => {} });
+const useAuth = () => useContext(AuthContext);
+
+function AuthProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
+  const { data, isLoading, refetch } = useGetMe({
+    query: { staleTime: 5 * 60 * 1000, queryKey: getGetMeQueryKey() },
+  });
+  const user = (data as { user: CurrentUser | null } | undefined)?.user ?? null;
+  return (
+    <AuthContext.Provider value={{ user, isLoading, refetch: () => { void refetch(); queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() }); } }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+/* ─── Tier helpers ───────────────────────────────────────────────────────── */
+const TIER_LABELS = ["Visitante", "Aluno I", "Aluno II", "Aluno III", "Aluno IV", "Dev"];
+const TIER_COLORS = [
+  "text-white/50",
+  "text-primary",
+  "text-accent",
+  "text-yellow-400",
+  "text-orange-400",
+  "text-red-400",
+];
+function tierLabel(tier: number) { return TIER_LABELS[tier] ?? "Visitante"; }
+function tierColor(tier: number) { return TIER_COLORS[tier] ?? "text-white/50"; }
+function rootCodeForTier(tier: number) { return tier >= 4 ? "0" : "1"; }
+
+/* ─── Main App ───────────────────────────────────────────────────────────── */
 export function MainApp() {
+  const queryClient = useQueryClient();
+  return (
+    <AuthProvider>
+      <MainAppInner queryClient={queryClient} />
+    </AuthProvider>
+  );
+}
+
+function MainAppInner({ queryClient }: { queryClient: ReturnType<typeof useQueryClient> }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeNodeCode, setActiveNodeCode] = useState<string | null>(null);
+  const [exerciseNodeCode, setExerciseNodeCode] = useState<string | null>(null);
   const [mirrored, setMirrored] = useState(false);
   const [inverted, setInverted] = useState(false);
   const [newAchievement, setNewAchievement] = useState<{ title: string; type: string } | null>(null);
-
-  const { data: progress } = useGetProgress();
+  const [loginOpen, setLoginOpen] = useState(false);
+  const { user } = useAuth();
 
   const handleAchievementEarned = (title: string, type: string) => {
     setNewAchievement({ title, type });
@@ -63,10 +125,14 @@ export function MainApp() {
       }}
     >
       <StarField />
-      <TopBar menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
+      <TopBar menuOpen={menuOpen} setMenuOpen={setMenuOpen} onLoginClick={() => setLoginOpen(true)} />
 
       <div className="flex-1 relative overflow-hidden flex">
-        <SpaceTree activeNodeCode={activeNodeCode} onNodeOpen={setActiveNodeCode} />
+        <SpaceTree
+          activeNodeCode={activeNodeCode}
+          onNodeOpen={setActiveNodeCode}
+          userTier={user?.tier ?? 0}
+        />
         <Totem />
       </div>
 
@@ -85,13 +151,30 @@ export function MainApp() {
       <IsaOwl />
 
       <AnimatePresence>
-        {activeNodeCode && (
+        {activeNodeCode && !exerciseNodeCode && (
           <NodeModal
             code={activeNodeCode}
             onClose={() => setActiveNodeCode(null)}
             onNodeOpen={setActiveNodeCode}
             onAchievementEarned={handleAchievementEarned}
+            onExercise={(code) => setExerciseNodeCode(code)}
+            userTier={user?.tier ?? 0}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {exerciseNodeCode && (
+          <ExerciseModal
+            nodeCode={exerciseNodeCode}
+            onClose={() => setExerciseNodeCode(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {loginOpen && (
+          <LoginModal onClose={() => setLoginOpen(false)} />
         )}
       </AnimatePresence>
 
@@ -131,7 +214,28 @@ function StarField() {
 }
 
 /* ─── Top bar ────────────────────────────────────────────────────────────── */
-function TopBar({ menuOpen, setMenuOpen }: { menuOpen: boolean; setMenuOpen: (v: boolean) => void }) {
+function TopBar({
+  menuOpen,
+  setMenuOpen,
+  onLoginClick,
+}: {
+  menuOpen: boolean;
+  setMenuOpen: (v: boolean) => void;
+  onLoginClick: () => void;
+}) {
+  const { user, refetch } = useAuth();
+  const logoutMutation = useLogout();
+  const queryClient = useQueryClient();
+
+  const handleLogout = () => {
+    logoutMutation.mutate(undefined, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+        refetch();
+      },
+    });
+  };
+
   return (
     <div
       className="h-14 flex items-center justify-between px-5 z-10 border-b border-white/10 shrink-0"
@@ -163,6 +267,37 @@ function TopBar({ menuOpen, setMenuOpen }: { menuOpen: boolean; setMenuOpen: (v:
             {menuOpen ? "Projeto Aliança Panorama" : "PAP"}
           </motion.span>
         </AnimatePresence>
+
+        {user ? (
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end">
+              <span className="text-[11px] font-bold text-white/80">{user.displayName ?? user.login}</span>
+              <span className={`text-[9px] font-bold uppercase tracking-widest ${tierColor(user.tier)}`}>
+                {tierLabel(user.tier)}
+              </span>
+            </div>
+            <motion.button
+              onClick={handleLogout}
+              className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
+              title="Sair"
+              whileTap={{ scale: 0.9 }}
+            >
+              <LogOut className="w-4 h-4 text-white/50" />
+            </motion.button>
+          </div>
+        ) : (
+          <motion.button
+            onClick={onLoginClick}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-widest border border-primary/50"
+            style={{ background: "hsl(var(--primary)/0.12)", color: "hsl(var(--primary))" }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            Entrar
+          </motion.button>
+        )}
+
         <motion.button
           onClick={() => setMenuOpen(!menuOpen)}
           className="p-2 rounded-full"
@@ -177,12 +312,141 @@ function TopBar({ menuOpen, setMenuOpen }: { menuOpen: boolean; setMenuOpen: (v:
   );
 }
 
+/* ─── Login Modal ────────────────────────────────────────────────────────── */
+function LoginModal({ onClose }: { onClose: () => void }) {
+  const [login, setLogin] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const { refetch } = useAuth();
+  const loginMutation = useLogin();
+  const queryClient = useQueryClient();
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    loginMutation.mutate(
+      { data: { login, password } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+          refetch();
+          onClose();
+        },
+        onError: () => {
+          setError("Login ou senha incorretos.");
+        },
+      }
+    );
+  };
+
+  const DEMO_USERS = [
+    { login: "guest", label: "Visitante (tier 0)" },
+    { login: "aluno1", label: "Aluno I (tier 1)" },
+    { login: "aluno2", label: "Aluno II (tier 2)" },
+    { login: "aluno3", label: "Aluno III (tier 3)" },
+    { login: "aluno4", label: "Aluno IV (tier 4)" },
+    { login: "root", label: "Dev (tier 5)" },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="absolute inset-0 bg-black/70 z-50 flex items-center justify-center p-8"
+      style={{ backdropFilter: "blur(6px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.88, y: 24 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.88, y: 24 }}
+        transition={{ type: "spring", stiffness: 300, damping: 25 }}
+        className="w-full max-w-sm rounded-3xl flex flex-col overflow-hidden shadow-2xl"
+        style={{ background: "hsl(var(--background)/0.98)", border: "1px solid hsl(var(--primary)/0.3)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-7 pt-7 pb-4 border-b border-white/10">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-xl font-black text-white">Entrar no PAP</h2>
+            <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full"><X className="w-4 h-4 text-white/50" /></button>
+          </div>
+          <p className="text-xs text-white/40">Senha de todos os usuários: <span className="text-primary font-bold">pap</span></p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3 p-7">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Login</label>
+            <input
+              value={login}
+              onChange={(e) => setLogin(e.target.value)}
+              className="px-3 py-2.5 rounded-xl text-sm text-white outline-none border border-white/15 focus:border-primary/60 transition-colors"
+              style={{ background: "rgba(255,255,255,0.05)" }}
+              placeholder="ex: aluno1"
+              autoFocus
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Senha</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="px-3 py-2.5 rounded-xl text-sm text-white outline-none border border-white/15 focus:border-primary/60 transition-colors"
+              style={{ background: "rgba(255,255,255,0.05)" }}
+              placeholder="pap"
+            />
+          </div>
+
+          {error && <p className="text-red-400 text-xs font-medium">{error}</p>}
+
+          <motion.button
+            type="submit"
+            disabled={loginMutation.isPending}
+            className="py-3 rounded-xl font-bold text-sm tracking-widest uppercase"
+            style={{ background: "hsl(var(--primary))", color: "white" }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            {loginMutation.isPending ? "Entrando..." : "Entrar"}
+          </motion.button>
+        </form>
+
+        <div className="px-7 pb-7 flex flex-col gap-1.5">
+          <p className="text-[10px] uppercase tracking-widest text-white/30 font-bold mb-1">Acesso rapido</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {DEMO_USERS.map((u) => (
+              <button
+                key={u.login}
+                onClick={() => { setLogin(u.login); setPassword("pap"); }}
+                className="px-2 py-1.5 rounded-lg text-[10px] font-bold text-left border border-white/10 hover:border-primary/40 transition-colors"
+                style={{ background: "rgba(255,255,255,0.03)" }}
+              >
+                <span className="text-white/70">{u.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 /* ─── Space Tree ─────────────────────────────────────────────────────────── */
-function SpaceTree({ activeNodeCode, onNodeOpen }: { activeNodeCode: string | null; onNodeOpen: (c: string) => void }) {
-  const { data: rootNodes, isLoading } = useListNodes();
+function SpaceTree({
+  activeNodeCode,
+  onNodeOpen,
+  userTier,
+}: {
+  activeNodeCode: string | null;
+  onNodeOpen: (c: string) => void;
+  userTier: number;
+}) {
+  const rootCode = rootCodeForTier(userTier);
+
+  const { data: rootNodeData, isLoading } = useGetNode(rootCode, {
+    query: { queryKey: ["nodes", rootCode] },
+  });
+
   const { data: level1Nodes } = useListNodes(
-    { parentCode: "0" },
-    { query: { queryKey: getListNodesQueryKey({ parentCode: "0" }) } }
+    { parentCode: rootCode },
+    { query: { queryKey: getListNodesQueryKey({ parentCode: rootCode }) } }
   );
 
   const [expandedL1, setExpandedL1] = useState<string | null>(null);
@@ -195,7 +459,8 @@ function SpaceTree({ activeNodeCode, onNodeOpen }: { activeNodeCode: string | nu
   const queryClient = useQueryClient();
   const { data: progress } = useGetProgress();
 
-  const handleNodeOpen = (code: string) => {
+  const handleNodeOpen = (code: string, locked: boolean) => {
+    if (locked) return;
     onNodeOpen(code);
     openNodeMutation.mutate({ code }, {
       onSuccess: () => {
@@ -206,7 +471,17 @@ function SpaceTree({ activeNodeCode, onNodeOpen }: { activeNodeCode: string | nu
     });
   };
 
-  const rootNode = rootNodes?.[0];
+  const rootNode = rootNodeData
+    ? {
+        code: rootNodeData.code,
+        title: rootNodeData.title,
+        abbreviation: rootNodeData.abbreviation ?? null,
+        parentCode: rootNodeData.parentCode ?? null,
+        childCount: rootNodeData.children?.length ?? 0,
+        level: rootNodeData.level,
+        locked: false,
+      }
+    : null;
 
   if (isLoading) {
     return (
@@ -221,7 +496,7 @@ function SpaceTree({ activeNodeCode, onNodeOpen }: { activeNodeCode: string | nu
       {rootNode && (
         <NodeOrb
           node={rootNode}
-          onClick={() => handleNodeOpen(rootNode.code)}
+          onClick={() => handleNodeOpen(rootNode.code, false)}
           onExpand={undefined}
           isActive={activeNodeCode === rootNode.code}
           isOpened={progress?.openedNodes.includes(rootNode.code) ?? false}
@@ -236,8 +511,10 @@ function SpaceTree({ activeNodeCode, onNodeOpen }: { activeNodeCode: string | nu
             <div key={child.code} className="flex flex-col items-center gap-3">
               <NodeOrb
                 node={child}
-                onClick={() => handleNodeOpen(child.code)}
-                onExpand={child.childCount > 0 ? () => setExpandedL1(expandedL1 === child.code ? null : child.code) : undefined}
+                onClick={() => handleNodeOpen(child.code, child.locked ?? false)}
+                onExpand={child.childCount > 0 && !(child.locked ?? false)
+                  ? () => setExpandedL1(expandedL1 === child.code ? null : child.code)
+                  : undefined}
                 isActive={activeNodeCode === child.code}
                 isOpened={progress?.openedNodes.includes(child.code) ?? false}
                 isRead={progress?.readNodes.includes(child.code) ?? false}
@@ -255,7 +532,7 @@ function SpaceTree({ activeNodeCode, onNodeOpen }: { activeNodeCode: string | nu
                     <NodeOrb
                       key={gc.code}
                       node={gc}
-                      onClick={() => handleNodeOpen(gc.code)}
+                      onClick={() => handleNodeOpen(gc.code, gc.locked ?? false)}
                       onExpand={undefined}
                       isActive={activeNodeCode === gc.code}
                       isOpened={progress?.openedNodes.includes(gc.code) ?? false}
@@ -286,48 +563,65 @@ function NodeOrb({
   size?: "sm" | "md" | "lg";
   isExpanded?: boolean;
 }) {
+  const locked = node.locked ?? false;
   const dim = size === "lg" ? "w-20 h-20" : size === "md" ? "w-16 h-16" : "w-12 h-12";
   const textSize = size === "lg" ? "text-sm" : size === "md" ? "text-xs" : "text-[10px]";
   const labelWidth = size === "lg" ? "max-w-[130px]" : size === "md" ? "max-w-[100px]" : "max-w-[80px]";
 
-  const glowColor = isRead
+  const glowColor = locked
+    ? "rgba(255,255,255,0.05)"
+    : isRead
     ? "hsl(var(--accent) / 0.8)"
     : isOpened
     ? "hsl(var(--primary) / 0.8)"
     : "hsl(var(--secondary) / 0.35)";
-  const border = isRead ? "border-accent" : isOpened ? "border-primary" : "border-secondary/40";
-  const bg = isRead ? "bg-accent/15" : isOpened ? "bg-primary/15" : "bg-secondary/5";
+  const border = locked
+    ? "border-white/15"
+    : isRead
+    ? "border-accent"
+    : isOpened
+    ? "border-primary"
+    : "border-secondary/40";
+  const bg = locked
+    ? "bg-white/3"
+    : isRead
+    ? "bg-accent/15"
+    : isOpened
+    ? "bg-primary/15"
+    : "bg-secondary/5";
 
   const label = node.abbreviation ?? node.title.slice(0, 4);
 
   return (
-    <div className="flex flex-col items-center gap-2 relative">
+    <div className="flex flex-col items-center gap-2 relative" title={locked ? "Desbloqueie sua conta para acessar este conteudo" : node.title}>
       <div className="relative">
         <motion.button
           onClick={onClick}
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.93 }}
-          className={`${dim} rounded-full flex items-center justify-center border-2 ${border} ${bg} relative`}
+          whileHover={locked ? {} : { scale: 1.1 }}
+          whileTap={locked ? {} : { scale: 0.93 }}
+          className={`${dim} rounded-full flex items-center justify-center border-2 ${border} ${bg} relative ${locked ? "cursor-not-allowed opacity-40" : ""}`}
           style={{ boxShadow: `0 0 ${isActive ? 28 : 12}px ${glowColor}` }}
-          title={node.title}
         >
-          {isActive && (
+          {isActive && !locked && (
             <motion.div
               className="absolute inset-0 rounded-full border-2 border-primary"
               animate={{ scale: [1, 1.35, 1], opacity: [0.8, 0, 0.8] }}
               transition={{ duration: 1.4, repeat: Infinity }}
             />
           )}
-          <span className={`font-bold ${textSize} text-white leading-none px-1 text-center`}>{label}</span>
-          {isRead && (
+          {locked ? (
+            <Lock className="w-4 h-4 text-white/30" />
+          ) : (
+            <span className={`font-bold ${textSize} text-white leading-none px-1 text-center`}>{label}</span>
+          )}
+          {isRead && !locked && (
             <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-accent flex items-center justify-center">
               <Star className="w-2 h-2 text-white" />
             </div>
           )}
         </motion.button>
 
-        {/* Broto (sprout) — expand children button */}
-        {onExpand && (
+        {onExpand && !locked && (
           <motion.button
             onClick={(e) => { e.stopPropagation(); onExpand(); }}
             className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full flex items-center justify-center border border-primary/60 z-10"
@@ -340,13 +634,13 @@ function NodeOrb({
           </motion.button>
         )}
 
-        {node.childCount > 0 && !onExpand && (
+        {node.childCount > 0 && !onExpand && !locked && (
           <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-primary/80 flex items-center justify-center text-[9px] font-bold text-white">
             {node.childCount}
           </div>
         )}
       </div>
-      <span className={`text-xs font-medium tracking-wide text-center text-white/75 leading-tight ${labelWidth} mt-1`}>
+      <span className={`text-xs font-medium tracking-wide text-center leading-tight ${labelWidth} mt-1 ${locked ? "text-white/25" : "text-white/75"}`}>
         {node.title}
       </span>
     </div>
@@ -449,7 +743,6 @@ function SpaceshipDashboard({ activeNodeCode }: { activeNodeCode: string | null 
     >
       <div className="absolute top-0 left-0 right-0 h-px" style={{ background: "linear-gradient(90deg,transparent,hsl(var(--primary)/0.6),transparent)" }} />
 
-      {/* Left headlight — Map */}
       <motion.button
         onClick={() => setLeftOpen(true)}
         className="w-24 h-24 rounded-full flex flex-col items-center justify-center gap-1 border-4 border-muted overflow-hidden shrink-0"
@@ -461,7 +754,6 @@ function SpaceshipDashboard({ activeNodeCode }: { activeNodeCode: string | null 
         <span className="text-[9px] text-primary/70 uppercase tracking-widest font-bold">Mapa</span>
       </motion.button>
 
-      {/* Center console */}
       <div className="flex-1 rounded-xl border border-white/10 flex flex-col overflow-hidden" style={{ background: "rgba(0,0,0,0.5)" }}>
         <div className="flex justify-center gap-2 p-2 border-b border-white/10">
           {([{ key: "notes" as const, Icon: FileText }, { key: "calc" as const, Icon: Calculator }, { key: "radio" as const, Icon: Radio }]).map(({ key, Icon }) => (
@@ -508,7 +800,6 @@ function SpaceshipDashboard({ activeNodeCode }: { activeNodeCode: string | null 
         </div>
       </div>
 
-      {/* Right headlight — Social */}
       <motion.button
         onClick={() => setRightOpen(true)}
         className="w-24 h-24 rounded-full flex flex-col items-center justify-center gap-1 border-4 border-muted overflow-hidden shrink-0"
@@ -520,7 +811,6 @@ function SpaceshipDashboard({ activeNodeCode }: { activeNodeCode: string | null 
         <span className="text-[9px] text-secondary/70 uppercase tracking-widest font-bold">Social</span>
       </motion.button>
 
-      {/* Map circle */}
       <AnimatePresence>
         {leftOpen && (
           <motion.div
@@ -542,7 +832,6 @@ function SpaceshipDashboard({ activeNodeCode }: { activeNodeCode: string | null 
         )}
       </AnimatePresence>
 
-      {/* Social circle */}
       <AnimatePresence>
         {rightOpen && (
           <motion.div
@@ -567,7 +856,8 @@ function MenuPanel({ onClose, onMirror, onInvert }: { onClose: () => void; onMir
   const { data: summary } = useGetSummary();
   const { data: achievements } = useListAchievements();
   const { data: dailyActivity } = useGetDailyActivity();
-  const [activeTab, setActiveTab] = useState<"stats" | "badges" | "heatmap">("stats");
+  const [activeTab, setActiveTab] = useState<"stats" | "badges" | "heatmap" | "guide">("stats");
+  const { user } = useAuth();
 
   const earnedAchievements = (achievements ?? []).filter((a) => a.earned);
 
@@ -579,21 +869,28 @@ function MenuPanel({ onClose, onMirror, onInvert }: { onClose: () => void; onMir
       style={{ background: "hsl(var(--background)/0.97)", backdropFilter: "blur(20px)" }}
     >
       <div className="flex justify-between items-center p-5 border-b border-white/10 shrink-0">
-        <h2 className="text-sm font-bold tracking-[0.2em] text-primary uppercase">Menu</h2>
+        <div>
+          <h2 className="text-sm font-bold tracking-[0.2em] text-primary uppercase">Menu</h2>
+          {user && (
+            <p className={`text-[10px] font-bold mt-0.5 ${tierColor(user.tier)}`}>
+              {user.displayName ?? user.login} — {tierLabel(user.tier)}
+            </p>
+          )}
+        </div>
         <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full transition-colors"><X className="w-4 h-4" /></button>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b border-white/10 shrink-0">
         {([
           { key: "stats", label: "Status" },
           { key: "heatmap", label: "Calendario" },
           { key: "badges", label: "Insignias" },
+          { key: "guide", label: "Guia" },
         ] as const).map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
-            className="flex-1 py-2.5 text-[11px] font-bold uppercase tracking-widest transition-colors"
+            className="flex-1 py-2.5 text-[10px] font-bold uppercase tracking-widest transition-colors"
             style={{ color: activeTab === key ? "hsl(var(--primary))" : "rgba(255,255,255,0.35)", borderBottom: activeTab === key ? "2px solid hsl(var(--primary))" : "2px solid transparent" }}
           >
             {label}
@@ -667,8 +964,84 @@ function MenuPanel({ onClose, onMirror, onInvert }: { onClose: () => void; onMir
             </div>
           </div>
         )}
+
+        {activeTab === "guide" && <NavGuide />}
       </div>
     </motion.div>
+  );
+}
+
+/* ─── Navigation Guide ───────────────────────────────────────────────────── */
+function NavGuide() {
+  const steps = [
+    {
+      icon: Map,
+      color: "text-primary",
+      title: "Árvore do Conhecimento",
+      desc: "Os orbes coloridos representam tópicos do FUVEST 2026. Clique num orbe para abrir o conteúdo. Use o botão de ramo para expandir sub-tópicos.",
+    },
+    {
+      icon: Lock,
+      color: "text-white/40",
+      title: "Níveis de Acesso",
+      desc: "Orbes com cadeado estão bloqueados. Faça login com contas de nível maior para acessar mais conteúdo (Aluno I: 4 níveis; Aluno II+: tudo).",
+    },
+    {
+      icon: Zap,
+      color: "text-yellow-400",
+      title: "Exercícios com IA",
+      desc: "Dentro de cada tópico, clique em Praticar para responder 3 questões geradas por IA no estilo FUVEST. Ganhe pontos por acerto!",
+    },
+    {
+      icon: Star,
+      color: "text-accent",
+      title: "Insígnias e Conquistas",
+      desc: "Explore um nó para ganhar a insígnia de Explorador. Leia o conteúdo por 30 segundos para ganhar a insígnia de Leitor.",
+    },
+    {
+      icon: FileText,
+      color: "text-secondary",
+      title: "Notas do Explorador",
+      desc: "Use o console central (painel de notas) para salvar anotações por tópico. Suas notas ficam vinculadas ao nó ativo.",
+    },
+    {
+      icon: Globe,
+      color: "text-primary",
+      title: "Mapa de Exploração",
+      desc: "O farol esquerdo (Mapa) mostra todos os nós que você já explorou. O farol direito (Social) é área comunitária — em breve!",
+    },
+    {
+      icon: Bell,
+      color: "text-primary",
+      title: "Isa, a Coruja Guia",
+      desc: "A corujinha no canto inferior esquerdo é a Isa! Clique nela para tirar dúvidas sobre matérias do FUVEST, dicas de estudo e muito mais.",
+    },
+    {
+      icon: HelpCircle,
+      color: "text-white/50",
+      title: "Planos e Upgrades",
+      desc: "Visitante: 3 níveis | Aluno I: 4 níveis | Aluno II+: acesso total ao FUVEST 2026. Contate o PAP para fazer upgrade da sua conta!",
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h3 className="text-[10px] uppercase tracking-widest text-white/40 mb-1">Guia de Navegação</h3>
+        <p className="text-[11px] text-white/50 leading-relaxed">Como usar o Projeto Aliança Panorama</p>
+      </div>
+      {steps.map((step, i) => (
+        <div key={i} className="flex gap-3 items-start p-3 rounded-xl border border-white/8" style={{ background: "rgba(255,255,255,0.02)" }}>
+          <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ background: "rgba(255,255,255,0.07)" }}>
+            <step.icon className={`w-3.5 h-3.5 ${step.color}`} />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold text-white mb-0.5">{step.title}</p>
+            <p className="text-[10px] text-white/45 leading-relaxed">{step.desc}</p>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -695,7 +1068,6 @@ function ActivityHeatmap({ dailyActivity }: { dailyActivity: Array<{ date: strin
     return "hsl(var(--primary))";
   };
 
-  // Group into weeks
   const weeks: typeof days[] = [];
   let currentWeek: typeof days = [];
   days.forEach((d) => {
@@ -748,14 +1120,16 @@ function ActivityHeatmap({ dailyActivity }: { dailyActivity: Array<{ date: strin
 }
 
 /* ─── Node Modal ─────────────────────────────────────────────────────────── */
-function NodeModal({ code, onClose, onNodeOpen, onAchievementEarned }: {
+function NodeModal({ code, onClose, onNodeOpen, onAchievementEarned, onExercise, userTier }: {
   code: string;
   onClose: () => void;
   onNodeOpen: (code: string) => void;
   onAchievementEarned: (title: string, type: string) => void;
+  onExercise: (code: string) => void;
+  userTier: number;
 }) {
   const { data: node, isLoading } = useGetNode(code, {
-    query: { queryKey: getListNodesQueryKey({ parentCode: code }), enabled: !!code },
+    query: { queryKey: ["nodes", code], enabled: !!code },
   });
   const readNodeMutation = useReadNode();
   const openNodeMutation = useOpenNode();
@@ -790,6 +1164,8 @@ function NodeModal({ code, onClose, onNodeOpen, onAchievementEarned }: {
       });
     }, 150);
   };
+
+  const canExercise = userTier >= 1;
 
   return (
     <motion.div
@@ -837,28 +1213,256 @@ function NodeModal({ code, onClose, onNodeOpen, onAchievementEarned }: {
               )}
             </div>
 
-            {node.children && node.children.length > 0 && (
-              <div className="px-8 pb-8 border-t border-black/8 pt-4">
-                <h4 className="text-[10px] font-bold uppercase tracking-widest text-black/40 mb-3">Ramos filhos</h4>
-                <div className="flex flex-wrap gap-2">
-                  {node.children.map((child) => (
-                    <motion.button
-                      key={child.code}
-                      onClick={() => handleChildClick(child.code)}
-                      whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold border"
-                      style={{ background: "hsl(var(--primary)/0.08)", borderColor: "hsl(var(--primary)/0.3)", color: "hsl(var(--primary))" }}
-                    >
-                      {child.abbreviation ?? child.code} — {child.title}
-                    </motion.button>
-                  ))}
+            <div className="px-8 pb-6 border-t border-black/8 pt-4 flex flex-col gap-4">
+              {canExercise ? (
+                <motion.button
+                  onClick={() => { onClose(); onExercise(code); }}
+                  className="w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+                  style={{ background: "hsl(var(--primary))", color: "white" }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <Zap className="w-4 h-4" />
+                  Praticar — 3 Questões
+                </motion.button>
+              ) : (
+                <div className="w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 border border-black/10 text-black/30">
+                  <Lock className="w-4 h-4" />
+                  Exercicios disponíveis no Aluno I+
                 </div>
-              </div>
-            )}
+              )}
+
+              {node.children && node.children.length > 0 && (
+                <div>
+                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-black/40 mb-3">Ramos filhos</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {node.children.map((child) => (
+                      <motion.button
+                        key={child.code}
+                        onClick={() => handleChildClick(child.code)}
+                        whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold border"
+                        style={{ background: "hsl(var(--primary)/0.08)", borderColor: "hsl(var(--primary)/0.3)", color: "hsl(var(--primary))" }}
+                      >
+                        {child.abbreviation ?? child.code} — {child.title}
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </>
         ) : (
           <div className="flex items-center justify-center h-64 text-black/40">No encontrado</div>
         )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── Exercise Modal ─────────────────────────────────────────────────────── */
+function ExerciseModal({ nodeCode, onClose }: { nodeCode: string; onClose: () => void }) {
+  const { data: exercises, isLoading, isError } = useGetExercises(
+    { nodeCode },
+    { query: { queryKey: ["exercises", nodeCode] } }
+  );
+  const submitAttempt = useSubmitAttempt();
+
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [result, setResult] = useState<{ correct: boolean; correctOption: number; explanation: string | null } | null>(null);
+  const [score, setScore] = useState(0);
+  const [finished, setFinished] = useState(false);
+
+  const questions = (exercises as ExerciseQuestion[] | undefined) ?? [];
+  const currentQ = questions[currentIdx];
+
+  const handleSelect = (optionIdx: number) => {
+    if (selectedOption !== null) return;
+    setSelectedOption(optionIdx);
+    if (!currentQ) return;
+    submitAttempt.mutate(
+      { data: { exerciseId: currentQ.id, selectedOption: optionIdx } },
+      {
+        onSuccess: (res) => {
+          const r = res as { correct: boolean; correctOption: number; explanation: string | null };
+          setResult(r);
+          if (r.correct) setScore((s) => s + 1);
+        },
+      }
+    );
+  };
+
+  const handleNext = () => {
+    if (currentIdx + 1 >= questions.length) {
+      setFinished(true);
+    } else {
+      setCurrentIdx((i) => i + 1);
+      setSelectedOption(null);
+      setResult(null);
+    }
+  };
+
+  const scoreMsg = score === 3
+    ? "Perfeito! Você domina esse tema!"
+    : score === 2
+    ? "Muito bem! Continue praticando."
+    : score === 1
+    ? "Bom inicio! Revise o conteúdo e tente de novo."
+    : "Não desanime! Releia o tópico e pratique mais.";
+
+  const LETTERS = ["A", "B", "C", "D"];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="absolute inset-0 bg-black/70 z-40 flex items-center justify-center p-8"
+      style={{ backdropFilter: "blur(6px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.88, y: 24 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.88, y: 24 }}
+        transition={{ type: "spring", stiffness: 300, damping: 25 }}
+        className="w-full max-w-lg rounded-3xl flex flex-col overflow-hidden shadow-2xl"
+        style={{ background: "hsl(var(--background)/0.98)", border: "1px solid hsl(var(--primary)/0.3)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-7 pt-6 pb-4 border-b border-white/10">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-primary">Exercicios FUVEST</span>
+            <p className="text-xs text-white/40 mt-0.5">Nó: {nodeCode}</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex gap-1.5">
+              {questions.map((_, i) => (
+                <div
+                  key={i}
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: i < currentIdx || finished ? "hsl(var(--accent))" : i === currentIdx ? "hsl(var(--primary))" : "rgba(255,255,255,0.2)" }}
+                />
+              ))}
+            </div>
+            <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full"><X className="w-4 h-4 text-white/50" /></button>
+          </div>
+        </div>
+
+        <div className="flex-1 p-7">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-8">
+              <motion.div className="w-10 h-10 rounded-full border-2 border-primary" animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }} />
+              <p className="text-xs text-white/40">Gerando questões com IA...</p>
+            </div>
+          ) : isError ? (
+            <div className="text-center py-8">
+              <p className="text-sm text-white/50">Não foi possível carregar os exercícios.</p>
+              <p className="text-xs text-white/30 mt-2">Verifique sua conexão e tente novamente.</p>
+            </div>
+          ) : finished ? (
+            <div className="flex flex-col items-center gap-5 py-4">
+              <div
+                className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-black"
+                style={{ background: score >= 2 ? "hsl(var(--accent)/0.2)" : "hsl(var(--primary)/0.2)", border: `2px solid ${score >= 2 ? "hsl(var(--accent))" : "hsl(var(--primary))"}` }}
+              >
+                <span style={{ color: score >= 2 ? "hsl(var(--accent))" : "hsl(var(--primary))" }}>{score}/3</span>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-black text-white mb-1">{score >= 2 ? "Excelente!" : "Continue tentando!"}</p>
+                <p className="text-sm text-white/55 leading-relaxed">{scoreMsg}</p>
+              </div>
+              <div className="w-full flex gap-3 mt-2">
+                <button
+                  onClick={onClose}
+                  className="flex-1 py-3 rounded-xl text-sm font-bold border border-white/15 text-white/60 hover:bg-white/5 transition-colors"
+                >
+                  Fechar
+                </button>
+                <motion.button
+                  onClick={() => { setCurrentIdx(0); setSelectedOption(null); setResult(null); setScore(0); setFinished(false); }}
+                  className="flex-1 py-3 rounded-xl text-sm font-bold"
+                  style={{ background: "hsl(var(--primary))", color: "white" }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  Tentar Novamente
+                </motion.button>
+              </div>
+            </div>
+          ) : currentQ ? (
+            <div className="flex flex-col gap-5">
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-white/40 mb-2">Questão {currentIdx + 1} de {questions.length}</p>
+                <p className="text-sm font-bold text-white leading-relaxed">{currentQ.question}</p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                {(currentQ.options as string[]).map((opt, i) => {
+                  const isSelected = selectedOption === i;
+                  const isCorrect = result?.correctOption === i;
+                  const isWrong = isSelected && result && !result.correct;
+                  let bg = "rgba(255,255,255,0.05)";
+                  let border = "border-white/15";
+                  if (result) {
+                    if (isCorrect) { bg = "hsl(var(--accent)/0.2)"; border = "border-accent"; }
+                    else if (isWrong) { bg = "rgba(239,68,68,0.15)"; border = "border-red-400"; }
+                  } else if (isSelected) {
+                    bg = "hsl(var(--primary)/0.2)"; border = "border-primary";
+                  }
+
+                  return (
+                    <motion.button
+                      key={i}
+                      onClick={() => handleSelect(i)}
+                      disabled={selectedOption !== null}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${selectedOption !== null ? "cursor-default" : "hover:border-primary/50"}`}
+                      style={{ background: bg, borderColor: border.replace("border-", "") }}
+                      whileHover={selectedOption === null ? { scale: 1.01 } : {}}
+                      whileTap={selectedOption === null ? { scale: 0.99 } : {}}
+                    >
+                      <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0" style={{ background: isSelected ? "hsl(var(--primary))" : "rgba(255,255,255,0.1)", color: "white" }}>
+                        {LETTERS[i]}
+                      </span>
+                      <span className="text-xs text-white/80 leading-relaxed">{opt}</span>
+                      {result && isCorrect && <CheckCircle className="w-4 h-4 text-accent ml-auto shrink-0" />}
+                      {result && isWrong && <XCircle className="w-4 h-4 text-red-400 ml-auto shrink-0" />}
+                    </motion.button>
+                  );
+                })}
+              </div>
+
+              <AnimatePresence>
+                {result && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                    className="p-4 rounded-xl border"
+                    style={{
+                      background: result.correct ? "hsl(var(--accent)/0.1)" : "rgba(239,68,68,0.08)",
+                      borderColor: result.correct ? "hsl(var(--accent)/0.4)" : "rgba(239,68,68,0.3)",
+                    }}
+                  >
+                    <p className="text-xs font-bold mb-1" style={{ color: result.correct ? "hsl(var(--accent))" : "rgb(239,68,68)" }}>
+                      {result.correct ? "Correto!" : "Incorreto!"}
+                    </p>
+                    {result.explanation && <p className="text-[11px] text-white/60 leading-relaxed">{result.explanation}</p>}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {result && (
+                <motion.button
+                  onClick={handleNext}
+                  className="w-full py-3 rounded-xl font-bold text-sm"
+                  style={{ background: "hsl(var(--primary))", color: "white" }}
+                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  {currentIdx + 1 >= questions.length ? "Ver Resultado" : "Próxima Questão"}
+                </motion.button>
+              )}
+            </div>
+          ) : null}
+        </div>
       </motion.div>
     </motion.div>
   );
@@ -888,6 +1492,7 @@ function getIsaResponse(msg: string): string {
 }
 
 function IsaOwl() {
+  const { user } = useAuth();
   const [phase, setPhase] = useState<"flying" | "perched" | "bubble" | "chat">("flying");
   const [wingFlap, setWingFlap] = useState(false);
   const [chatInput, setChatInput] = useState("");
@@ -895,8 +1500,9 @@ function IsaOwl() {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const hour = new Date().getHours();
-  const greeting =
-    hour < 12 ? "Bom dia, explorador!" : hour < 18 ? "Boa tarde, explorador!" : "Boa noite, explorador!";
+  const name = user?.displayName ?? user?.login ?? "explorador";
+  const timeGreet = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+  const greeting = `${timeGreet}, ${name}!`;
 
   useEffect(() => {
     const t = setTimeout(() => setPhase("perched"), 300);
@@ -945,7 +1551,6 @@ function IsaOwl() {
       className="absolute pointer-events-none"
       style={{ bottom: 132, left: 12, zIndex: 25 }}
     >
-      {/* Owl */}
       <motion.div
         onClick={handleClick}
         initial={{ y: -280, x: -60, opacity: 0, rotate: -20 }}
@@ -959,252 +1564,84 @@ function IsaOwl() {
         style={{ width: 48, height: 56 }}
         title="Isa — clique para conversar"
       >
-        {/* Idle body bob */}
         <motion.div
           className="absolute inset-0"
           animate={{ y: [0, -3, 0] }}
           transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
         >
-          {/* Left wing */}
           <motion.div
             className="absolute"
-            style={{
-              top: 16,
-              left: -11,
-              width: 15,
-              height: 24,
-              background: "hsl(var(--primary))",
-              borderRadius: "50% 10% 60% 40%",
-              transformOrigin: "right center",
-              opacity: 0.9,
-            }}
+            style={{ top: 16, left: -11, width: 15, height: 24, background: "hsl(var(--primary))", borderRadius: "50% 10% 60% 40%", transformOrigin: "right center", opacity: 0.9 }}
             animate={wingAnim}
             transition={wingTransition}
           />
-          {/* Right wing */}
           <motion.div
             className="absolute"
-            style={{
-              top: 16,
-              right: -11,
-              width: 15,
-              height: 24,
-              background: "hsl(var(--primary))",
-              borderRadius: "10% 50% 40% 60%",
-              transformOrigin: "left center",
-              opacity: 0.9,
-            }}
-            animate={
-              wingFlap
-                ? { rotate: [28, -28, 28, 0] as number[] }
-                : { rotate: [0, 4, 0] as number[] }
-            }
+            style={{ top: 16, right: -11, width: 15, height: 24, background: "hsl(var(--primary))", borderRadius: "10% 50% 40% 60%", transformOrigin: "left center", opacity: 0.9 }}
+            animate={wingFlap ? { rotate: [28, -28, 28, 0] as number[] } : { rotate: [0, 4, 0] as number[] }}
             transition={wingTransition}
           />
-
-          {/* Body */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                "linear-gradient(160deg, hsl(var(--primary)/0.95) 0%, hsl(var(--primary)/0.6) 100%)",
-              borderRadius: "42% 42% 50% 50%",
-              border: "1.5px solid hsl(var(--primary)/0.7)",
-            }}
-          />
-          {/* Belly disc */}
-          <div
-            className="absolute"
-            style={{
-              top: 8,
-              left: 8,
-              right: 8,
-              bottom: 14,
-              background: "rgba(255,255,255,0.13)",
-              borderRadius: "50%",
-            }}
-          />
-          {/* Ear tufts */}
-          <div
-            className="absolute"
-            style={{
-              top: -5,
-              left: 9,
-              width: 7,
-              height: 9,
-              background: "hsl(var(--primary))",
-              borderRadius: "50% 50% 0 0",
-              transform: "rotate(-15deg)",
-            }}
-          />
-          <div
-            className="absolute"
-            style={{
-              top: -5,
-              right: 9,
-              width: 7,
-              height: 9,
-              background: "hsl(var(--primary))",
-              borderRadius: "50% 50% 0 0",
-              transform: "rotate(15deg)",
-            }}
-          />
-          {/* Eyes */}
+          <div className="absolute inset-0" style={{ background: "linear-gradient(160deg, hsl(var(--primary)/0.95) 0%, hsl(var(--primary)/0.6) 100%)", borderRadius: "42% 42% 50% 50%", border: "1.5px solid hsl(var(--primary)/0.7)" }} />
+          <div className="absolute" style={{ top: 8, left: 8, right: 8, bottom: 14, background: "rgba(255,255,255,0.13)", borderRadius: "50%" }} />
+          <div className="absolute" style={{ top: -5, left: 9, width: 7, height: 9, background: "hsl(var(--primary))", borderRadius: "50% 50% 0 0", transform: "rotate(-15deg)" }} />
+          <div className="absolute" style={{ top: -5, right: 9, width: 7, height: 9, background: "hsl(var(--primary))", borderRadius: "50% 50% 0 0", transform: "rotate(15deg)" }} />
           <div className="absolute flex gap-1.5" style={{ top: 12, left: 9 }}>
-            <motion.div
-              className="w-4 h-4 rounded-full bg-white flex items-center justify-center shadow-sm"
-              animate={{ scaleY: [1, 0.12, 1] }}
-              transition={{ duration: 4, repeat: Infinity, repeatDelay: 2.5 }}
-            >
+            <motion.div className="w-4 h-4 rounded-full bg-white flex items-center justify-center shadow-sm" animate={{ scaleY: [1, 0.12, 1] }} transition={{ duration: 4, repeat: Infinity, repeatDelay: 2.5 }}>
               <div className="w-2.5 h-2.5 rounded-full bg-slate-900" />
             </motion.div>
-            <motion.div
-              className="w-4 h-4 rounded-full bg-white flex items-center justify-center shadow-sm"
-              animate={{ scaleY: [1, 0.12, 1] }}
-              transition={{ duration: 4, repeat: Infinity, repeatDelay: 2.5 }}
-            >
+            <motion.div className="w-4 h-4 rounded-full bg-white flex items-center justify-center shadow-sm" animate={{ scaleY: [1, 0.12, 1] }} transition={{ duration: 4, repeat: Infinity, repeatDelay: 2.5 }}>
               <div className="w-2.5 h-2.5 rounded-full bg-slate-900" />
             </motion.div>
           </div>
-          {/* Beak */}
-          <div
-            className="absolute"
-            style={{
-              top: 24,
-              left: "50%",
-              transform: "translateX(-50%)",
-              width: 0,
-              height: 0,
-              borderLeft: "4px solid transparent",
-              borderRight: "4px solid transparent",
-              borderTop: "7px solid hsl(45,90%,58%)",
-            }}
-          />
-          {/* Feet */}
-          <div
-            className="absolute flex gap-1.5"
-            style={{ bottom: -5, left: "50%", transform: "translateX(-50%)" }}
-          >
-            <div
-              style={{
-                width: 9,
-                height: 5,
-                background: "hsl(45,90%,58%)",
-                borderRadius: "0 0 5px 5px",
-              }}
-            />
-            <div
-              style={{
-                width: 9,
-                height: 5,
-                background: "hsl(45,90%,58%)",
-                borderRadius: "0 0 5px 5px",
-              }}
-            />
+          <div className="absolute" style={{ top: 24, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: "7px solid hsl(45,90%,58%)" }} />
+          <div className="absolute flex gap-1.5" style={{ bottom: -5, left: "50%", transform: "translateX(-50%)" }}>
+            <div style={{ width: 9, height: 5, background: "hsl(45,90%,58%)", borderRadius: "0 0 5px 5px" }} />
+            <div style={{ width: 9, height: 5, background: "hsl(45,90%,58%)", borderRadius: "0 0 5px 5px" }} />
           </div>
         </motion.div>
       </motion.div>
 
-      {/* Speech bubble */}
       <AnimatePresence>
         {phase === "bubble" && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.6, x: -8 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            exit={{ opacity: 0, scale: 0.6 }}
+            initial={{ opacity: 0, scale: 0.6, x: -8 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.6 }}
             className="absolute cursor-pointer pointer-events-auto px-3 py-2 rounded-xl text-[11px] font-bold"
-            style={{
-              bottom: 60,
-              left: 54,
-              whiteSpace: "nowrap",
-              background: "hsl(var(--primary))",
-              color: "white",
-              boxShadow: "0 4px 20px hsl(var(--primary)/0.5)",
-            }}
+            style={{ bottom: 60, left: 54, whiteSpace: "nowrap", background: "hsl(var(--primary))", color: "white", boxShadow: "0 4px 20px hsl(var(--primary)/0.5)" }}
             onClick={() => setPhase("chat")}
           >
             {greeting}
-            {/* Tail */}
-            <div
-              className="absolute"
-              style={{
-                bottom: -6,
-                left: 14,
-                width: 0,
-                height: 0,
-                borderLeft: "6px solid transparent",
-                borderRight: "6px solid transparent",
-                borderTop: "6px solid hsl(var(--primary))",
-              }}
-            />
+            <div className="absolute" style={{ bottom: -6, left: 14, width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: "6px solid hsl(var(--primary))" }} />
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Chat panel */}
       <AnimatePresence>
         {phase === "chat" && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.85, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.85, y: 8 }}
+            initial={{ opacity: 0, scale: 0.85, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.85, y: 8 }}
             className="absolute flex flex-col rounded-2xl border overflow-hidden pointer-events-auto"
-            style={{
-              bottom: 60,
-              left: 54,
-              width: 224,
-              height: 230,
-              background: "hsl(var(--background)/0.98)",
-              borderColor: "hsl(var(--primary)/0.4)",
-              boxShadow: "0 8px 32px hsl(var(--primary)/0.3)",
-            }}
+            style={{ bottom: 60, left: 54, width: 224, height: 230, background: "hsl(var(--background)/0.98)", borderColor: "hsl(var(--primary)/0.4)", boxShadow: "0 8px 32px hsl(var(--primary)/0.3)" }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div
-              className="flex items-center gap-2 px-3 py-2 border-b shrink-0"
-              style={{
-                borderColor: "hsl(var(--primary)/0.2)",
-                background: "hsl(var(--primary)/0.12)",
-              }}
-            >
-              <motion.div
-                className="w-5 h-5 rounded-full border border-primary/60"
-                style={{ background: "hsl(var(--primary)/0.3)" }}
-                animate={{ scale: [1, 1.15, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              />
+            <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0" style={{ borderColor: "hsl(var(--primary)/0.2)", background: "hsl(var(--primary)/0.12)" }}>
+              <motion.div className="w-5 h-5 rounded-full border border-primary/60" style={{ background: "hsl(var(--primary)/0.3)" }} animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 2, repeat: Infinity }} />
               <span className="text-[10px] font-black tracking-widest text-primary uppercase">Isa</span>
-              <span className="text-[10px] text-white/35">· Coruja Guia</span>
-              <button
-                onClick={() => setPhase("perched")}
-                className="ml-auto text-white/30 hover:text-white transition-colors"
-              >
-                <X className="w-3 h-3" />
-              </button>
+              {user && <span className="text-[10px]" style={{ color: tierColor(user.tier).replace("text-", "") }}>· {tierLabel(user.tier)}</span>}
+              <button onClick={() => setPhase("perched")} className="ml-auto text-white/30 hover:text-white transition-colors"><X className="w-3 h-3" /></button>
             </div>
 
-            {/* Messages */}
             <div className="flex-1 overflow-auto p-2 flex flex-col gap-1.5">
               {chatHistory.length === 0 && (
                 <p className="text-[10px] text-white/40 text-center mt-3 leading-relaxed px-2">
-                  {greeting}
-                  <br />
-                  Pergunte sobre FUVEST, matérias ou dicas!
+                  {greeting}<br />
+                  {user
+                    ? `Olá, ${user.displayName ?? user.login}! Como posso ajudar?`
+                    : "Pergunte sobre FUVEST, matérias ou dicas!"}
                 </p>
               )}
               {chatHistory.map((m, i) => (
                 <div key={i} className={`flex ${m.who === "user" ? "justify-end" : "justify-start"}`}>
-                  <span
-                    className="text-[10px] px-2 py-1.5 rounded-xl max-w-[88%] leading-relaxed"
-                    style={{
-                      background:
-                        m.who === "isa"
-                          ? "hsl(var(--primary)/0.18)"
-                          : "hsl(var(--secondary)/0.2)",
-                      color: "rgba(255,255,255,0.87)",
-                    }}
-                  >
+                  <span className="text-[10px] px-2 py-1.5 rounded-xl max-w-[88%] leading-relaxed" style={{ background: m.who === "isa" ? "hsl(var(--primary)/0.18)" : "hsl(var(--secondary)/0.2)", color: "rgba(255,255,255,0.87)" }}>
                     {m.text}
                   </span>
                 </div>
@@ -1212,14 +1649,10 @@ function IsaOwl() {
               <div ref={chatEndRef} />
             </div>
 
-            {/* Input */}
             <form
               className="flex items-center gap-1.5 px-2 py-2 border-t shrink-0"
               style={{ borderColor: "hsl(var(--primary)/0.18)" }}
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleChat(chatInput);
-              }}
+              onSubmit={(e) => { e.preventDefault(); handleChat(chatInput); }}
             >
               <input
                 value={chatInput}
@@ -1228,10 +1661,7 @@ function IsaOwl() {
                 placeholder="Pergunte à Isa..."
                 autoFocus
               />
-              <button
-                type="submit"
-                className="text-primary hover:opacity-70 transition-opacity"
-              >
+              <button type="submit" className="text-primary hover:opacity-70 transition-opacity">
                 <ChevronUp className="w-3.5 h-3.5" />
               </button>
             </form>

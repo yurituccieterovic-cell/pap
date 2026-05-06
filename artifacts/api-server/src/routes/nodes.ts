@@ -1,9 +1,14 @@
 import { Router, type IRouter } from "express";
-import { eq, isNull, sql } from "drizzle-orm";
 import { db, nodesTable } from "@workspace/db";
 import { ListNodesQueryParams, GetNodeParams } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+function canAccess(code: string, tier: number): boolean {
+  if (tier >= 2) return true;
+  if (tier === 1) return code.length <= 4;
+  return code.length <= 3;
+}
 
 router.get("/nodes", async (req, res): Promise<void> => {
   const query = ListNodesQueryParams.safeParse(req.query);
@@ -13,6 +18,7 @@ router.get("/nodes", async (req, res): Promise<void> => {
   }
 
   const { parentCode } = query.data;
+  const tier = req.session.userTier ?? 0;
 
   const allNodes = await db.select().from(nodesTable);
 
@@ -39,6 +45,7 @@ router.get("/nodes", async (req, res): Promise<void> => {
     parentCode: n.parentCode ?? null,
     childCount: childCounts[n.code] ?? 0,
     level: n.level,
+    locked: !canAccess(n.code, tier),
   }));
 
   res.json(result);
@@ -48,6 +55,13 @@ router.get("/nodes/:code", async (req, res): Promise<void> => {
   const params = GetNodeParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const tier = req.session.userTier ?? 0;
+
+  if (!canAccess(params.data.code, tier)) {
+    res.status(403).json({ error: "Acesso negado para o seu nível de conta" });
     return;
   }
 
@@ -76,6 +90,7 @@ router.get("/nodes/:code", async (req, res): Promise<void> => {
       parentCode: n.parentCode ?? null,
       childCount: childCounts[n.code] ?? 0,
       level: n.level,
+      locked: !canAccess(n.code, tier),
     }));
 
   res.json({

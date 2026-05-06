@@ -16,6 +16,10 @@ tags:
     description: Student notes
   - name: progress
     description: User progress and achievements
+  - name: auth
+    description: Authentication and session
+  - name: exercises
+    description: FUVEST practice exercises
 paths:
   /healthz:
     get:
@@ -261,6 +265,106 @@ paths:
                 items:
                   $ref: "#/components/schemas/DailyActivity"
 
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login with username and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginBody"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUser"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout and clear session
+      responses:
+        "204":
+          description: Logged out
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: Current user or null if not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+
+  /exercises:
+    get:
+      operationId: getExercises
+      tags: [exercises]
+      summary: Get 3 practice exercises for a node (AI-generated if needed)
+      parameters:
+        - name: nodeCode
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Node code to get exercises for
+      responses:
+        "200":
+          description: List of exercise questions (without correct answer)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExerciseQuestion"
+        "404":
+          description: Node not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /exercises/attempt:
+    post:
+      operationId: submitAttempt
+      tags: [exercises]
+      summary: Submit an exercise answer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExerciseAttemptBody"
+      responses:
+        "200":
+          description: Result with correct answer and explanation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExerciseAttemptResult"
+        "404":
+          description: Exercise not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 components:
   schemas:
     HealthStatus:
@@ -297,6 +401,9 @@ components:
         level:
           type: integer
           description: Depth level in the tree
+        locked:
+          type: boolean
+          description: Whether this node is locked for the current user tier
       required:
         - code
         - title
@@ -304,6 +411,7 @@ components:
         - parentCode
         - childCount
         - level
+        - locked
 
     NodeDetail:
       type: object
@@ -476,3 +584,86 @@ components:
         - totalNodes
         - explorationPercent
         - recentlyOpened
+
+    LoginBody:
+      type: object
+      properties:
+        login:
+          type: string
+        password:
+          type: string
+      required:
+        - login
+        - password
+
+    CurrentUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        login:
+          type: string
+        tier:
+          type: integer
+          description: "0=guest 1=aluno1 2=aluno2 3=aluno3 4=aluno4 5=root/dev"
+        displayName:
+          type: ["string", "null"]
+      required:
+        - id
+        - login
+        - tier
+        - displayName
+
+    MeResponse:
+      type: object
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/CurrentUser"
+            - type: "null"
+      required:
+        - user
+
+    ExerciseQuestion:
+      type: object
+      properties:
+        id:
+          type: integer
+        nodeCode:
+          type: string
+        question:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - nodeCode
+        - question
+        - options
+
+    ExerciseAttemptBody:
+      type: object
+      properties:
+        exerciseId:
+          type: integer
+        selectedOption:
+          type: integer
+      required:
+        - exerciseId
+        - selectedOption
+
+    ExerciseAttemptResult:
+      type: object
+      properties:
+        correct:
+          type: boolean
+        correctOption:
+          type: integer
+        explanation:
+          type: ["string", "null"]
+      required:
+        - correct
+        - correctOption
+        - explanation

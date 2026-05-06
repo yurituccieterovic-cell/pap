@@ -1,6 +1,6 @@
 # PAP — Projeto Aliança Panorama
 
-Gamified educational platform for FUVEST (Brazilian university entrance exam) preparation, featuring a hierarchical knowledge tree, spaceship cockpit dashboard, achievement system, notes, heatmap calendar, and Isa the AI owl mascot.
+Gamified educational platform for FUVEST (Brazilian university entrance exam) preparation, featuring a hierarchical knowledge tree, spaceship cockpit dashboard, AI-generated exercises, achievement system, notes, heatmap calendar, and Isa the AI owl mascot.
 
 ## Run & Operate
 
@@ -16,41 +16,44 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
 - Frontend: React + Vite, Tailwind CSS, Framer Motion, Lucide icons, TanStack Query
-- API: Express 5 with pino logging
-- DB: PostgreSQL + Drizzle ORM (57 nodes seeded from FUVEST 2026 PDF)
+- API: Express 5 with pino logging, express-session (memory store)
+- DB: PostgreSQL + Drizzle ORM (57 nodes + users + exercises tables)
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec → React Query hooks)
 - Build: esbuild (CJS bundle for server)
+- AI: `@workspace/integrations-openai-ai-server` via Replit AI Integrations proxy
 
 ## Where things live
 
 - `lib/api-spec/openapi.yaml` — OpenAPI spec (source of truth for API contract)
-- `lib/api-spec/orval.config.ts` — Orval codegen config
 - `lib/api-client-react/` — generated React Query hooks (do not edit manually)
 - `lib/api-zod/src/generated/api.ts` — generated Zod schemas (do not edit manually)
-- `lib/db/src/schema/index.ts` — Drizzle schema (nodes, notes, node_progress, achievements)
-- `artifacts/api-server/src/routes/` — Express route handlers
-- `artifacts/pap/src/components/MainApp.tsx` — main frontend (all UI components including IsaOwl)
+- `lib/db/src/schema/` — Drizzle schema (nodes, notes, node_progress, achievements, users, exercises)
+- `artifacts/api-server/src/routes/` — Express route handlers (auth, nodes, notes, progress, exercises)
+- `artifacts/pap/src/components/MainApp.tsx` — full frontend (auth, tree, exercises, nav guide, Isa)
 
 ## Architecture decisions
 
 - Contract-first API: OpenAPI spec → codegen → React Query hooks and Zod schemas. Never write API types by hand.
 - Square viewport (≈900×900px) enforced in `App.tsx` with black bars on desktop.
-- Knowledge tree is hierarchical: root "0" → (E, R, 1/Ciências, F) → level-2 (11 CH, 12 CE, 13 CB, 14 Lin) → level-3 (disciplines) → level-4 (subtopics). Tree renders lazily.
-- Achievement system: two achievements per node (explored + read). Read triggered after 30s of modal open.
-- No `console.log` in server code — use `req.log` in handlers, `logger` singleton elsewhere.
-- Isa owl: purely CSS/Framer Motion, no backend — preset keyword-matched responses for FUVEST topics.
+- Knowledge tree root is tier-aware: tier ≥ 4 → root "0" (all branches); tier < 4 → root "1" (Ciências only). Lock enforced server-side via `canAccess(tier, code)`.
+- Auth: express-session with plaintext passwords (demo only). 6 users: guest/aluno1-4/root, all password "pap".
+- Exercises: AI-generated via OpenAI (3 MCQ per node), cached in DB, submitted attempts tracked.
+- Achievement system: two per node (explored + read). Read triggered after 30s of modal open.
+- No `console.log` in server — use `req.log` in handlers, `logger` singleton elsewhere.
+- Isa owl: CSS/Framer Motion, personalized greeting by user name/tier, keyword-matched FUVEST responses.
 
 ## Product
 
-- Space/universe themed UI in Portuguese
-- Hierarchical knowledge tree (57 nodes from FUVEST 2026): Ciências Humanas (Port, Ing, Hist, Geo, Fil, Soc), Exatas (Mat, Fís, Quím), Biológicas (Bio), Linguagens (Arte, EF)
-- Spaceship cockpit dashboard with notes, map, and social panels
-- Achievement/badge system with toast notifications
-- Activity heatmap calendar (last 90 days) in menu panel
+- Space/universe themed UI in Portuguese, no emojis (Lucide icons only)
+- 6-tier user system: Visitante (0), Aluno I–IV (1–4), Dev (5). All password "pap".
+- Hierarchical knowledge tree (57 nodes FUVEST 2026), tier-gated with lock icons
+- AI-generated 3-question FUVEST-style MCQ exercises per node (Aluno I+ only)
+- Spaceship cockpit dashboard: notes, map, social panels
+- Menu panel: Status, Calendário, Insígnias, Guia (navigation guide) tabs
+- Activity heatmap calendar (last 90 days)
 - Ad totem column (collapsible) on the right
-- Menu panel: Status, Calendário, Insígnias tabs
-- Isa owl mascot: CSS-drawn, flies in on load, perches above map button, speech bubble greeting, chatbox with FUVEST study tips
+- Isa owl mascot: flies in, perches, speech bubble, chat with FUVEST study tips, personalized by tier
 
 ## User preferences
 
@@ -61,9 +64,10 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 ## Gotchas
 
 - `useListNodes()` with no args returns only nodes where `parentCode IS NULL` (i.e., just node "0"). Always pass `{ parentCode: "X" }` to fetch children.
-- Orval zod output uses `mode: "single"` and `target: "generated/api.ts"` — no `schemas` property.
+- Orval zod output uses `mode: "single"` — generated schema names are PascalCase (e.g. `LoginBody`, not `loginBodySchema`).
 - `lib/api-zod/src/index.ts` must only export `./generated/api` (not a schemas folder).
 - Always run codegen after editing openapi.yaml.
+- `custom-fetch.ts` has `credentials: "include"` so session cookies are sent automatically.
 - IsaOwl phase state: "flying" → "perched" → "bubble" → "chat". useEffect must guard with early return to avoid TS7030.
 
 ## Pointers
