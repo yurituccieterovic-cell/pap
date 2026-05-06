@@ -3,13 +3,19 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: PAP - Projeto Aliança Panorama API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: nodes
+    description: Knowledge tree nodes
+  - name: notes
+    description: Student notes
+  - name: progress
+    description: User progress and achievements
 paths:
   /healthz:
     get:
@@ -24,6 +30,222 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /nodes:
+    get:
+      operationId: listNodes
+      tags: [nodes]
+      summary: List root nodes or nodes by parent
+      parameters:
+        - name: parentCode
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Parent node code to list children of
+      responses:
+        "200":
+          description: List of nodes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Node"
+
+  /nodes/{code}:
+    get:
+      operationId: getNode
+      tags: [nodes]
+      summary: Get a knowledge node by code
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Node details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeDetail"
+        "404":
+          description: Node not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /summary:
+    get:
+      operationId: getSummary
+      tags: [progress]
+      summary: Get user exploration summary and stats
+      responses:
+        "200":
+          description: Summary stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Summary"
+
+  /notes:
+    get:
+      operationId: listNotes
+      tags: [notes]
+      summary: List all notes
+      parameters:
+        - name: nodeCode
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter notes by node code/subject
+      responses:
+        "200":
+          description: List of notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Note"
+    post:
+      operationId: createNote
+      tags: [notes]
+      summary: Create a new note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNoteBody"
+      responses:
+        "201":
+          description: Created note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+
+  /notes/{id}:
+    patch:
+      operationId: updateNote
+      tags: [notes]
+      summary: Update a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNoteBody"
+      responses:
+        "200":
+          description: Updated note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+        "404":
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteNote
+      tags: [notes]
+      summary: Delete a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Note deleted
+        "404":
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /progress:
+    get:
+      operationId: getProgress
+      tags: [progress]
+      summary: Get user progress including opened nodes and achievements
+      responses:
+        "200":
+          description: User progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Progress"
+
+  /progress/open/{code}:
+    post:
+      operationId: openNode
+      tags: [progress]
+      summary: Mark a node as opened (explored)
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Progress"
+
+  /progress/read/{code}:
+    post:
+      operationId: readNode
+      tags: [progress]
+      summary: Mark a node content as read
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Progress"
+
+  /achievements:
+    get:
+      operationId: listAchievements
+      tags: [progress]
+      summary: List all achievements/badges
+      responses:
+        "200":
+          description: List of achievements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Achievement"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +256,188 @@ components:
       required:
         - status
 
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Node:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Hierarchical code e.g. "1", "11", "12", "111"
+        title:
+          type: string
+        parentCode:
+          type: ["string", "null"]
+        childCount:
+          type: integer
+        level:
+          type: integer
+          description: Depth level in the tree
+      required:
+        - code
+        - title
+        - parentCode
+        - childCount
+        - level
+
+    NodeDetail:
+      type: object
+      properties:
+        code:
+          type: string
+        title:
+          type: string
+        subtitle:
+          type: ["string", "null"]
+        content:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
+        parentCode:
+          type: ["string", "null"]
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/Node"
+        level:
+          type: integer
+      required:
+        - code
+        - title
+        - subtitle
+        - content
+        - imageUrl
+        - parentCode
+        - children
+        - level
+
+    Note:
+      type: object
+      properties:
+        id:
+          type: integer
+        nodeCode:
+          type: ["string", "null"]
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - nodeCode
+        - content
+        - createdAt
+        - updatedAt
+
+    CreateNoteBody:
+      type: object
+      properties:
+        nodeCode:
+          type: ["string", "null"]
+        content:
+          type: string
+      required:
+        - content
+
+    UpdateNoteBody:
+      type: object
+      properties:
+        content:
+          type: string
+
+    Progress:
+      type: object
+      properties:
+        openedNodes:
+          type: array
+          items:
+            type: string
+          description: Node codes that have been opened/explored
+        readNodes:
+          type: array
+          items:
+            type: string
+          description: Node codes whose content was fully read
+        achievements:
+          type: array
+          items:
+            $ref: "#/components/schemas/Achievement"
+        totalNodes:
+          type: integer
+        explorationPercent:
+          type: number
+      required:
+        - openedNodes
+        - readNodes
+        - achievements
+        - totalNodes
+        - explorationPercent
+
+    Achievement:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [explored, read, exercise, approved]
+        nodeCode:
+          type: ["string", "null"]
+        earnedAt:
+          type: ["string", "null"]
+          format: date-time
+        earned:
+          type: boolean
+      required:
+        - id
+        - code
+        - title
+        - description
+        - type
+        - nodeCode
+        - earnedAt
+        - earned
+
+    Summary:
+      type: object
+      properties:
+        nodesExplored:
+          type: integer
+        nodesRead:
+          type: integer
+        achievementsEarned:
+          type: integer
+        totalAchievements:
+          type: integer
+        totalNodes:
+          type: integer
+        explorationPercent:
+          type: number
+        recentlyOpened:
+          type: array
+          items:
+            $ref: "#/components/schemas/Node"
+      required:
+        - nodesExplored
+        - nodesRead
+        - achievementsEarned
+        - totalAchievements
+        - totalNodes
+        - explorationPercent
+        - recentlyOpened

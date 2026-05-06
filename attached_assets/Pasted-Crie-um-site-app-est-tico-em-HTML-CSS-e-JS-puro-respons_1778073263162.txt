@@ -1,0 +1,134 @@
+Crie um site/app estático em HTML, CSS e JS puro, responsivo para celular e computador.
+
+CONCEITO VISUAL
+- O site deve ter proporção visual quadrada.
+- No celular, o quadrado fica centralizado e o espaço sobrando acima e abaixo fica preto.
+- No computador, o quadrado fica centralizado e o espaço sobrando nas laterais fica preto.
+- Fundo principal com aparência de universo/cosmos.
+- Estilo futurista, elegante e legível, com animações suaves.
+- Deve ter modo claro/escuro, opção de inverter cores e opção de espelhar horizontalmente o site.
+
+CABEÇALHO
+- Canto superior esquerdo: uma bola/nódulo principal com o texto:
+  “Esta bola é um ramo hierárquico mais alto de um organograma misturado com mind map”.
+- Dessa bola sai a árvore principal.
+- Canto superior direito: título curto “PAP”.
+- Quando o menu central/lateral for aberto, o título “PAP” se expande para:
+  “Projeto Aliança Panorama”.
+- Ícone de menu: uma bola com três riscos horizontais.
+- Menu com opções:
+  1. inverter cores
+  2. espelhar site
+  3. zoom +
+  4. zoom -
+  5. resetar zoom
+
+ÁRVORE DO CONHECIMENTO
+- A raiz principal representa:
+  “Conhecimento humano”, dividido em:
+  empirismo, religiões, ciências e filosofia.
+- A parte navegável principal deve focar na ramificação de ciências.
+- Sistema de numeração hierárquica:
+  1 = Ciências
+  11 = Ciências Humanas
+  12 = Ciências Exatas
+  13 = Ciências Biológicas
+  111 = primeiro filho de 11
+  112 = segundo filho de 11
+  121 = primeiro filho de 12
+  etc.
+- Cada nódulo deve mostrar:
+  1. código numérico
+  2. título
+  3. lista dos nódulos filhos
+- Diferença entre:
+  - clicar para abrir conteúdo do nódulo
+  - clicar em botão/controle para expandir ramificações
+
+CONTEÚDO FUVEST
+- Estruturar os nódulos com base no Programa do Vestibular FUVEST 2026.
+- Usar como áreas principais:
+  Linguagens e suas Tecnologias
+  Matemática e suas Tecnologias
+  Ciências da Natureza e suas Tecnologias
+  Ciências Humanas e Sociais Aplicadas
+- Dentro delas, criar subnódulos por disciplinas/componentes e depois por tópicos.
+- Por enquanto, cada nódulo deve ter apenas:
+  - título
+  - subtítulo opcional
+  - lista de filhos
+  - texto placeholder curto
+- Deixar preparado para futuramente importar todo o conteúdo oficial do PDF.
+
+JANELAS DOS NÓDULOS
+- Ao clicar no nódulo, abrir uma janela branca central com:
+  - botão X para fechar
+  - título
+  - subtítulo opcional
+  - imagem opcional
+  - texto com barra de rolagem
+  - lista de nódulos filhos
+- A janela dos nódulos pode ser quadrada com cantos arredondados.
+- A raiz singular é a bola principal que se ramifica; ao clicar nela também abre janela.
+
+PAINEL INFERIOR / NAVE
+- Na parte inferior do site, criar um painel fixo como se fosse a visão interna de uma nave/carro.
+- Cor cinza.
+- Forma inspirada em carro antigo/Fusca visto de frente, ou telefone antigo deitado:
+  bola esquerda + retângulo central + bola direita.
+- Bola esquerda do painel:
+  - mini mapa da árvore explorada
+  - conforme o usuário expande nódulos, o mapa cresce
+  - ao clicar, abre uma janela redonda com X para fechar
+- Centro do painel:
+  - retângulo branco chamado “Área do aluno”
+  - acima dele, bolas horizontais com ferramentas:
+    - bloco de notas
+    - notas por matéria
+    - disciplina
+    - calculadora
+    - rádio
+  - default: bloco de notas com autosave em memória
+- Bola direita do painel:
+  - área social
+  - objetivo: incentivar convivência offline com outras pessoas
+  - ao clicar, abrir janela redonda com X
+  - bônus sociais podem aparecer aqui
+
+INSÍGNIAS
+- Ao expandir um nódulo: ganhar insígnia 1
+- Ao abrir e ler o conteúdo do nódulo: ganhar insígnia 2
+- Ao fazer exercício do nódulo: ganhar insígnia 3
+- Ao ser aprovado no exercício: ganhar a insígnia mais alta
+- A insígnia mais alta gera bônus social para a área social
+- Criar estrutura visual pronta, mesmo que os exercícios ainda sejam placeholders
+
+OUTDOOR / TOTEM
+- Entre a área social e a região do título, do lado de fora do painel da nave, colocar um totem vertical fino.
+- Esse totem deve ter 3 blocos:
+  1. propaganda própria do site
+  2. propaganda externa
+  3. propaganda interna/parceiros/campanhas
+- Se não houver propaganda, mostrar campanhas apoiadas e parceiros.
+- Criar opção paga fictícia:
+  - remover totem: ele abaixa como antena
+  - reativar totem: ele sobe novamente
+  - em modo premium, pode virar painel de lembretes
+
+PLANOS DE ACESSO
+- Visitante sem cadastro:
+  - pode ver da área geral de ciências até disciplinas
+- Planos por especialidade:
+  - liberam conteúdos mais profundos
+- Plano maior:
+  - libera conteúdo completo, exercícios e recursos extras
+- Criar tela ou modal simples de planos, apenas visual por enquanto
+
+REQUISITOS TÉCNICOS
+- HTML, CSS e JS puro em arquivo único ou poucos arquivos.
+- Sem backend por enquanto.
+- Dados iniciais em JSON local.
+- Código organizado em componentes lógicos:
+  header, tree, modal, cockpit, map, social, badges, plans.
+- Responsivo para mobile e desktop.
+- Com animações suaves e acessibilidade básica.
