@@ -156,6 +156,32 @@
   /* Same as root since default is dark space theme */
 }
 
+/* ── Palette: Natureza (teal-green) ── */
+.palette-nature {
+  --primary: 162 82% 42%;
+  --ring: 162 82% 42%;
+  --chart-1: 162 82% 42%;
+  --secondary: 128 68% 48%;
+  --chart-2: 128 68% 48%;
+  --sidebar-primary: 162 82% 42%;
+  --primary-border: hsl(162 82% 42%);
+  --secondary-border: hsl(128 68% 48%);
+  --sidebar-primary-border: hsl(162 82% 42%);
+}
+
+/* ── Palette: Aurora (pink-magenta) ── */
+.palette-aurora {
+  --primary: 310 78% 62%;
+  --ring: 310 78% 62%;
+  --chart-1: 310 78% 62%;
+  --secondary: 280 72% 58%;
+  --chart-2: 280 72% 58%;
+  --sidebar-primary: 310 78% 62%;
+  --primary-border: hsl(310 78% 62%);
+  --secondary-border: hsl(280 72% 58%);
+  --sidebar-primary-border: hsl(310 78% 62%);
+}
+
 @layer base {
   * {
     @apply border-border;

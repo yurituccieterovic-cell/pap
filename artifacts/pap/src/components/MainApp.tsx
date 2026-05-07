@@ -52,6 +52,15 @@ import {
   Bell,
   CheckCircle,
   XCircle,
+  Maximize2,
+  Minimize2,
+  Palette,
+  Info,
+  CreditCard,
+  Music2,
+  ExternalLink,
+  Check,
+  ChevronLeft,
 } from "lucide-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 
@@ -110,6 +119,9 @@ function MainAppInner({ queryClient }: { queryClient: ReturnType<typeof useQuery
   const [newAchievement, setNewAchievement] = useState<{ title: string; type: string } | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [socialOpen, setSocialOpen] = useState(false);
+  const [palette, setPalette] = useState<"space" | "nature" | "aurora">("space");
+  const [donationsOpen, setDonationsOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
   const { user } = useAuth();
 
   const handleAchievementEarned = (title: string, type: string) => {
@@ -119,16 +131,13 @@ function MainAppInner({ queryClient }: { queryClient: ReturnType<typeof useQuery
 
   return (
     <div
-      className="flex flex-col h-full w-full relative overflow-hidden"
-      style={{
-        transform: mirrored ? "scaleX(-1)" : undefined,
-        filter: inverted ? "invert(1)" : undefined,
-      }}
+      className={`flex flex-col h-full w-full relative overflow-hidden${palette !== "space" ? ` palette-${palette}` : ""}`}
+      style={{ filter: inverted ? "invert(1)" : undefined }}
     >
       <StarField />
       <TopBar menuOpen={menuOpen} setMenuOpen={setMenuOpen} onLoginClick={() => setLoginOpen(true)} />
 
-      <div className="flex-1 relative overflow-hidden flex">
+      <div className="flex-1 relative overflow-hidden flex" style={{ transform: mirrored ? "scaleX(-1)" : undefined }}>
         <SpaceTree
           activeNodeCode={activeNodeCode}
           onNodeOpen={setActiveNodeCode}
@@ -139,12 +148,18 @@ function MainAppInner({ queryClient }: { queryClient: ReturnType<typeof useQuery
 
       <SpaceshipDashboard activeNodeCode={activeNodeCode} onSocialOpen={() => setSocialOpen(true)} />
 
+      <FooterBar onTutorial={() => setTutorialOpen(true)} />
+
       <AnimatePresence>
         {menuOpen && (
           <MenuPanel
             onClose={() => setMenuOpen(false)}
             onMirror={() => setMirrored((v) => !v)}
             onInvert={() => setInverted((v) => !v)}
+            palette={palette}
+            onPalette={setPalette}
+            onDonations={() => setDonationsOpen(true)}
+            onTutorial={() => setTutorialOpen(true)}
           />
         )}
       </AnimatePresence>
@@ -186,6 +201,18 @@ function MainAppInner({ queryClient }: { queryClient: ReturnType<typeof useQuery
       </AnimatePresence>
 
       <AnimatePresence>
+        {donationsOpen && (
+          <DonationsModal onClose={() => setDonationsOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {tutorialOpen && (
+          <TutorialModal onClose={() => setTutorialOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {newAchievement && (
           <AchievementToast title={newAchievement.title} type={newAchievement.type} />
         )}
@@ -221,6 +248,23 @@ function StarField() {
 }
 
 /* ─── Top bar ────────────────────────────────────────────────────────────── */
+function useFullscreen() {
+  const [isFs, setIsFs] = useState(false);
+  useEffect(() => {
+    const handler = () => setIsFs(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+  const toggle = () => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      void document.documentElement.requestFullscreen();
+    }
+  };
+  return { isFs, toggle };
+}
+
 function TopBar({
   menuOpen,
   setMenuOpen,
@@ -230,6 +274,7 @@ function TopBar({
   setMenuOpen: (v: boolean) => void;
   onLoginClick: () => void;
 }) {
+  const { isFs, toggle: toggleFs } = useFullscreen();
   const { user, refetch } = useAuth();
   const logoutMutation = useLogout();
   const queryClient = useQueryClient();
@@ -245,8 +290,8 @@ function TopBar({
 
   return (
     <div
-      className="h-14 flex items-center justify-between px-5 z-10 border-b border-white/10 shrink-0"
-      style={{ background: "hsl(var(--background) / 0.85)", backdropFilter: "blur(12px)" }}
+      className="h-14 flex items-center justify-between px-5 z-50 border-b border-white/10 shrink-0"
+      style={{ background: "hsl(var(--background) / 0.92)", backdropFilter: "blur(12px)" }}
     >
       <div className="flex items-center gap-3">
         <div
@@ -259,21 +304,29 @@ function TopBar({
             transition={{ duration: 2, repeat: Infinity }}
           />
         </div>
-        <span className="text-primary tracking-widest font-bold text-xs uppercase">Conhecimento</span>
+        <span className="text-primary tracking-widest font-bold text-xs uppercase hidden sm:inline">Conhecimento</span>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <AnimatePresence mode="wait">
           <motion.span
             key={menuOpen ? "full" : "short"}
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 5 }}
-            className="font-bold tracking-[0.18em] text-base"
+            className="font-bold tracking-[0.18em] text-sm"
           >
             {menuOpen ? "Projeto Aliança Panorama" : "PAP"}
           </motion.span>
         </AnimatePresence>
+        <motion.button
+          onClick={toggleFs}
+          className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
+          title={isFs ? "Sair da tela cheia" : "Tela cheia"}
+          whileTap={{ scale: 0.9 }}
+        >
+          {isFs ? <Minimize2 className="w-3.5 h-3.5 text-white/40" /> : <Maximize2 className="w-3.5 h-3.5 text-white/40" />}
+        </motion.button>
 
         {user ? (
           <div className="flex items-center gap-2">
@@ -363,7 +416,7 @@ function LoginModal({ onClose }: { onClose: () => void }) {
         <div className="px-7 pt-7 pb-4 border-b border-white/10">
           <div className="flex items-center justify-between mb-1">
             <h2 className="text-xl font-black text-white">Entrar no PAP</h2>
-            <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full"><X className="w-4 h-4 text-white/50" /></button>
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"><X className="w-4 h-4 text-white/70" /></button>
           </div>
           <p className="text-xs text-white/40">Acesse com seu login e senha</p>
         </div>
@@ -635,7 +688,7 @@ function Totem() {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10">
+    <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10 hidden sm:block">
       <motion.div
         className="w-20 rounded-xl overflow-hidden border border-white/15 shadow-2xl"
         style={{ background: "hsl(var(--background) / 0.9)", backdropFilter: "blur(12px)" }}
@@ -720,10 +773,22 @@ function SpaceshipDashboard({ activeNodeCode, onSocialOpen }: { activeNodeCode: 
 
   return (
     <div
-      className="h-32 border-t border-white/15 flex items-stretch px-3 py-3 gap-3 z-20 relative shrink-0"
-      style={{ background: "hsl(var(--background) / 0.96)", backdropFilter: "blur(16px)" }}
+      className="border-t-0 flex items-center px-3 py-3 gap-3 z-20 relative shrink-0 transition-all duration-300"
+      style={{
+        height: activeTool === "notes" ? "8rem" : "14rem",
+        background: "hsl(220 12% 20% / 0.97)",
+        backdropFilter: "blur(16px)",
+        borderTop: "1px solid rgba(255,255,255,0.1)",
+        borderRadius: "1.25rem 1.25rem 0 0",
+      }}
     >
-      <div className="absolute top-0 left-0 right-0 h-px" style={{ background: "linear-gradient(90deg,transparent,hsl(var(--primary)/0.6),transparent)" }} />
+      <div
+        className="absolute top-0 h-px"
+        style={{
+          left: "6.75rem", right: "6.75rem",
+          background: "linear-gradient(90deg, transparent, hsl(var(--primary)/0.55), transparent)",
+        }}
+      />
 
       <motion.button
         onClick={() => setLeftOpen(true)}
@@ -777,8 +842,8 @@ function SpaceshipDashboard({ activeNodeCode, onSocialOpen }: { activeNodeCode: 
               />
             </div>
           )}
-          {activeTool === "calc" && <div className="h-full flex items-center justify-center text-white/30 text-xs">Calculadora — em breve</div>}
-          {activeTool === "radio" && <div className="h-full flex items-center justify-center text-white/30 text-xs">Radio espacial — em breve</div>}
+          {activeTool === "calc" && <CalculatorTool />}
+          {activeTool === "radio" && <RadioTool />}
         </div>
       </div>
 
@@ -800,7 +865,7 @@ function SpaceshipDashboard({ activeNodeCode, onSocialOpen }: { activeNodeCode: 
             className="absolute bottom-36 left-3 w-72 h-72 rounded-full flex flex-col items-center justify-center border-2 border-primary/60 z-30 overflow-hidden"
             style={{ background: "hsl(var(--background)/0.97)", boxShadow: "0 0 40px hsl(var(--primary)/0.4)" }}
           >
-            <button onClick={() => setLeftOpen(false)} className="absolute top-8 right-8 text-white/40 hover:text-white"><X className="w-4 h-4" /></button>
+            <button onClick={() => setLeftOpen(false)} className="absolute top-8 right-8 w-7 h-7 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"><X className="w-3.5 h-3.5 text-white/80" /></button>
             <Globe className="w-9 h-9 text-primary mb-2" />
             <p className="text-xs font-bold text-primary tracking-widest uppercase mb-2">Mapa de Exploração</p>
             <div className="flex flex-wrap justify-center gap-1 px-14">
@@ -819,7 +884,15 @@ function SpaceshipDashboard({ activeNodeCode, onSocialOpen }: { activeNodeCode: 
 }
 
 /* ─── Menu Panel ─────────────────────────────────────────────────────────── */
-function MenuPanel({ onClose, onMirror, onInvert }: { onClose: () => void; onMirror: () => void; onInvert: () => void }) {
+function MenuPanel({ onClose, onMirror, onInvert, palette, onPalette, onDonations, onTutorial }: {
+  onClose: () => void;
+  onMirror: () => void;
+  onInvert: () => void;
+  palette: "space" | "nature" | "aurora";
+  onPalette: (p: "space" | "nature" | "aurora") => void;
+  onDonations: () => void;
+  onTutorial: () => void;
+}) {
   const { data: summary } = useGetSummary();
   const { data: achievements } = useListAchievements();
   const { data: dailyActivity } = useGetDailyActivity();
@@ -891,9 +964,46 @@ function MenuPanel({ onClose, onMirror, onInvert }: { onClose: () => void; onMir
               ))}
             </div>
 
-            <div className="mt-auto flex flex-col gap-2 pt-4 border-t border-white/10">
-              <button onClick={onInvert} className="w-full py-2.5 rounded-xl text-[11px] font-bold tracking-widest uppercase border border-white/10 hover:bg-white/5 transition-colors">Inverter Cores</button>
-              <button onClick={onMirror} className="w-full py-2.5 rounded-xl text-[11px] font-bold tracking-widest uppercase border border-white/10 hover:bg-white/5 transition-colors">Espelhar Tela</button>
+            <div className="flex flex-col gap-3 pt-4 border-t border-white/10">
+              <div className="flex flex-col gap-2">
+                <p className="text-[10px] uppercase tracking-widest text-white/40 flex items-center gap-1.5"><Palette className="w-3 h-3" />Palheta de Cores</p>
+                <div className="flex gap-2">
+                  {([
+                    { key: "space" as const, label: "Espaço", hue: "190 90% 50%" },
+                    { key: "nature" as const, label: "Natureza", hue: "162 82% 42%" },
+                    { key: "aurora" as const, label: "Aurora", hue: "310 78% 62%" },
+                  ]).map(({ key, label, hue }) => (
+                    <button
+                      key={key}
+                      onClick={() => onPalette(key)}
+                      className="flex flex-col items-center gap-1 flex-1"
+                      title={label}
+                    >
+                      <div
+                        className="w-8 h-8 rounded-full transition-all"
+                        style={{
+                          background: `hsl(${hue})`,
+                          boxShadow: palette === key ? `0 0 12px hsl(${hue})` : "none",
+                          border: palette === key ? `2px solid hsl(${hue})` : "2px solid transparent",
+                          outline: palette === key ? `2px solid rgba(255,255,255,0.3)` : "none",
+                          outlineOffset: "2px",
+                        }}
+                      />
+                      <span className="text-[9px] text-white/40">{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button onClick={onInvert} className="w-full py-2 rounded-xl text-[11px] font-bold tracking-widest uppercase border border-white/10 hover:bg-white/5 transition-colors">Inverter Cores</button>
+              <button onClick={onMirror} className="w-full py-2 rounded-xl text-[11px] font-bold tracking-widest uppercase border border-white/10 hover:bg-white/5 transition-colors">Espelhar Tela (universo)</button>
+              <div className="flex gap-2 pt-1">
+                <button onClick={onTutorial} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-bold tracking-widest uppercase border border-white/10 hover:bg-white/5 transition-colors">
+                  <Info className="w-3 h-3" />Sobre
+                </button>
+                <button onClick={onDonations} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-bold tracking-widest uppercase border border-accent/30 hover:bg-accent/10 text-accent/80 transition-colors">
+                  <CreditCard className="w-3 h-3" />Planos
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -907,20 +1017,34 @@ function MenuPanel({ onClose, onMirror, onInvert }: { onClose: () => void; onMir
             <p className="text-[11px] text-white/40">{earnedAchievements.length} de {(achievements ?? []).length} conquistadas</p>
             <div className="flex flex-col gap-2">
               {earnedAchievements.map((a) => (
-                <div
+                <motion.div
                   key={a.code}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl border"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer"
                   style={{
                     borderColor: a.type === "read" ? "hsl(var(--accent)/0.4)" : "hsl(var(--primary)/0.4)",
                     background: a.type === "read" ? "hsl(var(--accent)/0.07)" : "hsl(var(--primary)/0.07)",
                   }}
+                  whileHover={{ scale: 1.02, x: 3 }}
+                  whileTap={{ scale: 0.98 }}
+                  title={a.description}
                 >
-                  {a.type === "read" ? <BookOpen className="w-4 h-4 text-accent shrink-0" /> : <Eye className="w-4 h-4 text-primary shrink-0" />}
-                  <div>
+                  <motion.div
+                    animate={{ rotate: [0, 8, -8, 0] }}
+                    transition={{ duration: 2.5, repeat: Infinity, repeatDelay: 3 }}
+                  >
+                    {a.type === "read" ? <BookOpen className="w-4 h-4 text-accent shrink-0" /> : <Eye className="w-4 h-4 text-primary shrink-0" />}
+                  </motion.div>
+                  <div className="flex-1">
                     <p className="text-xs font-bold text-white">{a.title}</p>
                     <p className="text-[10px] text-white/40">{a.description}</p>
                   </div>
-                </div>
+                  <motion.div
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: a.type === "read" ? "hsl(var(--accent))" : "hsl(var(--primary))" }}
+                    animate={{ opacity: [1, 0.3, 1] }}
+                    transition={{ duration: 1.8, repeat: Infinity }}
+                  />
+                </motion.div>
               ))}
               {earnedAchievements.length === 0 && (
                 <div className="text-center py-8">
@@ -1310,7 +1434,7 @@ function ExerciseModal({ nodeCode, onClose }: { nodeCode: string; onClose: () =>
                 />
               ))}
             </div>
-            <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full"><X className="w-4 h-4 text-white/50" /></button>
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"><X className="w-4 h-4 text-white/70" /></button>
           </div>
         </div>
 
@@ -1463,8 +1587,18 @@ function IsaOwl() {
   const [phase, setPhase] = useState<"flying" | "perched" | "bubble" | "chat">("flying");
   const [wingFlap, setWingFlap] = useState(false);
   const [chatInput, setChatInput] = useState("");
-  const [chatHistory, setChatHistory] = useState<Array<{ who: "isa" | "user"; text: string }>>([]);
+  const storageKey = user ? `isa-chat-${user.id}` : "isa-chat-guest";
+  const [chatHistory, setChatHistory] = useState<Array<{ who: "isa" | "user"; text: string }>>(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved ? (JSON.parse(saved) as Array<{ who: "isa" | "user"; text: string }>) : [];
+    } catch { return []; }
+  });
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try { localStorage.setItem(storageKey, JSON.stringify(chatHistory)); } catch { /* ignore */ }
+  }, [chatHistory, storageKey]);
 
   const hour = new Date().getHours();
   const name = user?.displayName ?? user?.login ?? "explorador";
@@ -1594,7 +1728,7 @@ function IsaOwl() {
               <motion.div className="w-5 h-5 rounded-full border border-primary/60" style={{ background: "hsl(var(--primary)/0.3)" }} animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 2, repeat: Infinity }} />
               <span className="text-[10px] font-black tracking-widest text-primary uppercase">Isa</span>
               {user && <span className="text-[10px]" style={{ color: tierColor(user.tier).replace("text-", "") }}>· {tierLabel(user.tier)}</span>}
-              <button onClick={() => setPhase("perched")} className="ml-auto text-white/30 hover:text-white transition-colors"><X className="w-3 h-3" /></button>
+              <button onClick={() => setPhase("perched")} className="ml-auto w-6 h-6 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"><X className="w-3 h-3 text-white/70" /></button>
             </div>
 
             <div className="flex-1 overflow-auto p-2 flex flex-col gap-1.5">
@@ -1872,8 +2006,8 @@ function SocialModal({ onClose }: { onClose: () => void }) {
             </button>
           )}
           <span className="text-[11px] font-black tracking-widest text-secondary uppercase flex-1">{titleMap[view]}</span>
-          <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full transition-colors">
-            <X className="w-4 h-4 text-white/40" />
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+            <X className="w-4 h-4 text-white/70" />
           </button>
         </div>
 
@@ -2242,5 +2376,333 @@ function SocialFriendDetail({
         />
       </div>
     </div>
+  );
+}
+
+/* ─── Calculator Tool ────────────────────────────────────────────────────── */
+function CalculatorTool() {
+  const [display, setDisplay] = useState("0");
+  const [expr, setExpr] = useState("");
+  const [justCalc, setJustCalc] = useState(false);
+
+  const press = (key: string) => {
+    if (key === "C") { setDisplay("0"); setExpr(""); setJustCalc(false); return; }
+    if (key === "=") {
+      try {
+        const safeExpr = expr ? expr + display : display;
+        // eslint-disable-next-line no-new-func
+        const result = new Function(`"use strict"; return (${safeExpr})`)() as number;
+        setDisplay(String(parseFloat(result.toFixed(10))));
+        setExpr(""); setJustCalc(true);
+      } catch { setDisplay("Erro"); setExpr(""); setJustCalc(false); }
+      return;
+    }
+    if (key === "±") { setDisplay((d) => d.startsWith("-") ? d.slice(1) : "-" + d); return; }
+    if (key === "√") {
+      const v = parseFloat(display);
+      setDisplay(String(parseFloat(Math.sqrt(v).toFixed(10))));
+      setExpr(""); setJustCalc(true); return;
+    }
+    if (key === "x²") {
+      const v = parseFloat(display);
+      setDisplay(String(parseFloat((v * v).toFixed(10))));
+      setExpr(""); setJustCalc(true); return;
+    }
+    if (["+", "-", "×", "÷", "%"].includes(key)) {
+      const op = key === "×" ? "*" : key === "÷" ? "/" : key === "%" ? "/100*" : key;
+      setExpr((justCalc ? display : expr + display) + op);
+      setDisplay("0"); setJustCalc(false); return;
+    }
+    if (justCalc) { setDisplay(key); setJustCalc(false); return; }
+    setDisplay((d) => (d === "0" && key !== ".") ? key : (d + key).slice(0, 13));
+  };
+
+  const rows = [
+    ["C", "±", "√", "÷"],
+    ["7", "8", "9", "×"],
+    ["4", "5", "6", "-"],
+    ["1", "2", "3", "+"],
+    ["0", "x²", ".", "="],
+  ];
+
+  return (
+    <div className="h-full flex flex-col p-1.5 gap-0.5">
+      <div className="flex flex-col px-2 py-1 shrink-0">
+        <span className="text-[9px] text-white/25 text-right truncate">{expr || "\u00a0"}</span>
+        <span className="text-base font-black text-white text-right truncate">{display}</span>
+      </div>
+      <div className="flex flex-col gap-0.5 flex-1">
+        {rows.map((row, ri) => (
+          <div key={ri} className="flex gap-0.5 flex-1">
+            {row.map((key) => (
+              <button
+                key={key}
+                onClick={() => press(key)}
+                className={`flex-1 rounded-lg text-[11px] font-bold transition-all active:scale-95 ${
+                  key === "=" ? "text-background" :
+                  ["+", "-", "×", "÷"].includes(key) ? "text-primary" :
+                  ["C", "±", "√", "x²", "%"].includes(key) ? "text-accent" : "text-white/80"
+                }`}
+                style={{
+                  background: key === "=" ? "hsl(var(--primary)/0.85)" :
+                    ["+", "-", "×", "÷"].includes(key) ? "hsl(var(--primary)/0.18)" :
+                    ["C", "±", "√", "x²", "%"].includes(key) ? "hsl(var(--accent)/0.14)" :
+                    "rgba(255,255,255,0.07)",
+                }}
+              >
+                {key}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Radio Tool ─────────────────────────────────────────────────────────── */
+function RadioTool() {
+  const [playing, setPlaying] = useState<string | null>(null);
+
+  const stations = [
+    { name: "Lo-fi Study", url: "https://www.youtube.com/results?search_query=lofi+hip+hop+study+music", color: "hsl(var(--primary))" },
+    { name: "Classica", url: "https://www.youtube.com/results?search_query=classical+music+concentration+study", color: "hsl(var(--accent))" },
+    { name: "Jazz Foco", url: "https://www.youtube.com/results?search_query=jazz+study+focus+music", color: "hsl(var(--secondary))" },
+    { name: "Ambiental", url: "https://www.youtube.com/results?search_query=ambient+focus+study+music", color: "#4ade80" },
+  ];
+
+  return (
+    <div className="h-full flex flex-col p-2 gap-2">
+      <div className="flex items-center gap-2 px-1 shrink-0">
+        <div className="flex items-end gap-0.5 h-5">
+          {[3, 5, 4, 7, 3, 5, 4].map((h, i) => (
+            <motion.div
+              key={i}
+              className="w-0.5 rounded-full bg-primary"
+              animate={playing ? { height: [h, h * 1.8, h * 0.5, h * 1.4, h] } : { height: 2 }}
+              transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.1, ease: "easeInOut" }}
+              style={{ minWidth: 2 }}
+            />
+          ))}
+        </div>
+        <span className="text-[9px] text-white/40 truncate">{playing ?? "Selecione uma estação"}</span>
+        <Music2 className="w-3 h-3 text-white/20 ml-auto" />
+      </div>
+      <div className="flex flex-col gap-1 flex-1">
+        {stations.map((s) => (
+          <button
+            key={s.name}
+            onClick={() => { setPlaying(s.name === playing ? null : s.name); window.open(s.url, "_blank"); }}
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:opacity-90 active:scale-98"
+            style={{
+              background: s.name === playing ? s.color.replace(")", "/0.18)").replace("hsl(", "hsl(").replace("/0.18)/0.18)", "/0.18)") : "rgba(255,255,255,0.05)",
+              border: `1px solid ${s.name === playing ? s.color.replace(")", "/0.45)").replace("hsl(", "hsl(") : "transparent"}`,
+              color: s.name === playing ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.5)",
+            }}
+          >
+            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />
+            {s.name}
+            <ExternalLink className="w-2.5 h-2.5 ml-auto opacity-40" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Footer Bar ─────────────────────────────────────────────────────────── */
+function FooterBar({ onTutorial }: { onTutorial: () => void }) {
+  return (
+    <div
+      className="shrink-0 h-7 flex items-center justify-center gap-2 border-t border-white/5 px-4"
+      style={{ background: "hsl(220 12% 17% / 0.97)" }}
+    >
+      <img
+        src="/sociedade-tucci-logo.png"
+        alt="Sociedade Tucci"
+        className="w-4 h-4 rounded-full object-cover"
+        style={{ filter: "invert(1) brightness(0.65)", opacity: 0.7 }}
+      />
+      <button
+        onClick={onTutorial}
+        className="text-[9px] text-white/30 hover:text-white/60 transition-colors tracking-wider uppercase font-bold"
+      >
+        Sociedade Tucci
+      </button>
+    </div>
+  );
+}
+
+/* ─── Donations Modal ────────────────────────────────────────────────────── */
+function DonationsModal({ onClose }: { onClose: () => void }) {
+  const plans = [
+    {
+      name: "Visitante",
+      price: "Grátis",
+      color: "rgba(255,255,255,0.4)",
+      features: ["Árvore do Conhecimento (3 níveis)", "Exploração livre dos tópicos", "Insígnias de explorador"],
+      highlight: false,
+    },
+    {
+      name: "Aluno",
+      price: "R$ 19/mês",
+      color: "hsl(var(--primary))",
+      features: ["Acesso total ao FUVEST 2026 (57 nós)", "Exercícios gerados por IA", "Área Social: chat + caderno", "Calendário de atividades", "Todas as insígnias"],
+      highlight: true,
+    },
+    {
+      name: "Turbo",
+      price: "R$ 39/mês",
+      color: "hsl(var(--accent))",
+      features: ["Tudo do Aluno", "Acesso antecipado a novos recursos", "Suporte prioritário", "Badge exclusivo"],
+      highlight: false,
+    },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="absolute inset-0 bg-black/75 z-50 flex items-center justify-center p-6"
+      style={{ backdropFilter: "blur(8px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.88, y: 24 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.88, y: 24 }}
+        transition={{ type: "spring", stiffness: 300, damping: 25 }}
+        className="w-full max-w-sm rounded-3xl flex flex-col overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto"
+        style={{ background: "hsl(var(--background)/0.98)", border: "1px solid hsl(var(--accent)/0.3)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-white/10 shrink-0">
+          <div>
+            <h2 className="text-lg font-black text-white">Planos & Doações</h2>
+            <p className="text-xs text-white/40 mt-0.5">Apoie o PAP — acesse recursos exclusivos</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+            <X className="w-4 h-4 text-white/70" />
+          </button>
+        </div>
+        <div className="p-5 flex flex-col gap-3">
+          {plans.map((p) => (
+            <div
+              key={p.name}
+              className="p-4 rounded-2xl border flex flex-col gap-2"
+              style={{
+                borderColor: p.highlight ? "hsl(var(--primary)/0.5)" : "rgba(255,255,255,0.08)",
+                background: p.highlight ? "hsl(var(--primary)/0.07)" : "rgba(255,255,255,0.02)",
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-black" style={{ color: p.color }}>{p.name}</span>
+                <span className="text-sm font-bold text-white">{p.price}</span>
+              </div>
+              <ul className="flex flex-col gap-1">
+                {p.features.map((f) => (
+                  <li key={f} className="flex items-start gap-2 text-[10px] text-white/55">
+                    <Check className="w-2.5 h-2.5 shrink-0 mt-0.5" style={{ color: p.color }} />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              {p.highlight && (
+                <button
+                  className="mt-1 w-full py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all hover:opacity-90 active:scale-98"
+                  style={{ background: "hsl(var(--primary)/0.9)", color: "hsl(var(--primary-foreground))" }}
+                  onClick={() => window.open("mailto:contato@sociedadetucci.com.br?subject=Plano%20PAP%20Aluno", "_blank")}
+                >
+                  Assinar Agora
+                </button>
+              )}
+            </div>
+          ))}
+          <p className="text-[9px] text-white/22 text-center">contato@sociedadetucci.com.br</p>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── Tutorial Modal ─────────────────────────────────────────────────────── */
+function TutorialModal({ onClose }: { onClose: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="absolute inset-0 bg-black/75 z-50 flex items-center justify-center p-6"
+      style={{ backdropFilter: "blur(8px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.88, y: 24 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.88, y: 24 }}
+        transition={{ type: "spring", stiffness: 300, damping: 25 }}
+        className="w-full max-w-sm rounded-3xl flex flex-col overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto"
+        style={{ background: "hsl(var(--background)/0.98)", border: "1px solid hsl(var(--primary)/0.25)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-white/10 shrink-0">
+          <div>
+            <h2 className="text-lg font-black text-white">Sobre o PAP</h2>
+            <p className="text-xs text-white/40 mt-0.5">Projeto Aliança Panorama</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+            <X className="w-4 h-4 text-white/70" />
+          </button>
+        </div>
+        <div className="p-5 flex flex-col gap-5">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 mb-1">
+              <img
+                src="/sociedade-tucci-logo.png"
+                alt="Sociedade Tucci"
+                className="w-7 h-7 rounded-full object-cover"
+                style={{ filter: "invert(1) brightness(0.8)" }}
+              />
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-accent">O Projeto</h3>
+            </div>
+            <p className="text-[11px] text-white/65 leading-relaxed">
+              Projeto idealizado em <strong className="text-white">2014</strong>, criado em <strong className="text-white">2026</strong> e gerido pela{" "}
+              <strong className="text-white">Sociedade Tucci — Soluções Inteligentes em Produção Multimídia</strong>.
+            </p>
+          </div>
+
+          <div className="border-t border-white/8 pt-4 flex flex-col gap-2">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Como foi feito</h3>
+            <p className="text-[11px] text-white/65 leading-relaxed">
+              Desenvolvido com o app <strong className="text-white">Replit</strong> com assistência da IA{" "}
+              <strong className="text-white">Perplexity</strong>.
+            </p>
+          </div>
+
+          <div className="border-t border-white/8 pt-4 flex flex-col gap-3">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-secondary mb-0">Como usar</h3>
+            {([
+              { icon: Globe, color: "text-primary", title: "Árvore do Conhecimento", desc: "Clique nos orbes para explorar tópicos do FUVEST 2026. Use o botão de ramo para expandir sub-tópicos." },
+              { icon: Zap, color: "text-yellow-400", title: "Exercícios com IA", desc: "Dentro de cada tópico, clique em Praticar para questões no estilo FUVEST." },
+              { icon: User, color: "text-secondary", title: "Área Social", desc: "Clique no botão Social para ver seu perfil, adicionar amigos e conversar." },
+              { icon: FileText, color: "text-accent", title: "Notas", desc: "Use o painel central para anotações vinculadas a cada tópico." },
+            ] as const).map(({ icon: Icon, color, title, desc }) => (
+              <div key={title} className="flex items-start gap-3">
+                <Icon className={`w-3.5 h-3.5 ${color} shrink-0 mt-0.5`} />
+                <div>
+                  <p className="text-[10px] font-bold text-white/90">{title}</p>
+                  <p className="text-[9px] text-white/45 leading-relaxed mt-0.5">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t border-white/8 pt-3 flex flex-col gap-1">
+            <p className="text-[9px] text-white/25 text-center">© 2026 Sociedade Tucci · Todos os direitos reservados</p>
+            <a
+              href="https://www.instagram.com/sociedadetucci"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[9px] text-primary/40 hover:text-primary/70 transition-colors text-center"
+            >
+              @sociedadetucci
+            </a>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
