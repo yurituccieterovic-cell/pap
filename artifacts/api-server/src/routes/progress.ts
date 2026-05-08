@@ -16,19 +16,30 @@ function getAuthUserId(req: Request, res: Response): number | null {
   return userId;
 }
 
-async function getProgressData(userId: number) {
+async function getProgressData(userId: number, tier: number) {
   const userProgress = await db.select().from(nodeProgressTable).where(eq(nodeProgressTable.userId, userId));
   const userAchievements = await db.select().from(achievementsTable).where(eq(achievementsTable.userId, userId));
   const allNodes = await db.select().from(nodesTable);
 
-  const openedNodes = userProgress.filter((p) => p.opened).map((p) => p.nodeCode);
-  const readNodes = userProgress.filter((p) => p.read).map((p) => p.nodeCode);
-  const totalNodes = allNodes.length;
+  const nodeMap = new Map(allNodes.map((n) => [n.code, n]));
+  const accessibleNodes = allNodes.filter(
+    (n) => canAccess(n.code, tier) && isInAllowedSubtree(n.code, nodeMap, tier),
+  );
+
+  const accessibleCodes = new Set(accessibleNodes.map((n) => n.code));
+
+  const openedNodes = userProgress
+    .filter((p) => p.opened && accessibleCodes.has(p.nodeCode))
+    .map((p) => p.nodeCode);
+  const readNodes = userProgress
+    .filter((p) => p.read && accessibleCodes.has(p.nodeCode))
+    .map((p) => p.nodeCode);
+  const totalNodes = accessibleNodes.length;
   const explorationPercent = totalNodes > 0 ? Math.round((openedNodes.length / totalNodes) * 100) : 0;
 
   const earnedMap = new Map(userAchievements.map((a) => [a.code, a]));
 
-  const achievements = allNodes.flatMap((node) => {
+  const achievements = accessibleNodes.flatMap((node) => {
     const exploredCode = `explored_${node.code}`;
     const readCode = `read_${node.code}`;
     const exploredAch = earnedMap.get(exploredCode);
@@ -63,7 +74,8 @@ async function getProgressData(userId: number) {
 router.get("/progress", async (req, res): Promise<void> => {
   const userId = getAuthUserId(req, res);
   if (!userId) return;
-  const progress = await getProgressData(userId);
+  const tier = req.session.userTier ?? 0;
+  const progress = await getProgressData(userId, tier);
   res.json(progress);
 });
 
@@ -71,20 +83,33 @@ router.get("/summary", async (req, res): Promise<void> => {
   const userId = getAuthUserId(req, res);
   if (!userId) return;
 
+  const tier = req.session.userTier ?? 0;
+
   const userProgress = await db.select().from(nodeProgressTable).where(eq(nodeProgressTable.userId, userId));
   const userAchievements = await db.select().from(achievementsTable).where(eq(achievementsTable.userId, userId));
   const allNodes = await db.select().from(nodesTable);
 
-  const openedNodes = userProgress.filter((p) => p.opened).map((p) => p.nodeCode);
-  const readNodes = userProgress.filter((p) => p.read).map((p) => p.nodeCode);
-  const totalNodes = allNodes.length;
+  const nodeMap = new Map(allNodes.map((n) => [n.code, n]));
+  const accessibleNodes = allNodes.filter(
+    (n) => canAccess(n.code, tier) && isInAllowedSubtree(n.code, nodeMap, tier),
+  );
+
+  const accessibleCodes = new Set(accessibleNodes.map((n) => n.code));
+
+  const openedNodes = userProgress
+    .filter((p) => p.opened && accessibleCodes.has(p.nodeCode))
+    .map((p) => p.nodeCode);
+  const readNodes = userProgress
+    .filter((p) => p.read && accessibleCodes.has(p.nodeCode))
+    .map((p) => p.nodeCode);
+  const totalNodes = accessibleNodes.length;
   const explorationPercent = totalNodes > 0 ? Math.round((openedNodes.length / totalNodes) * 100) : 0;
 
-  const totalAchievements = allNodes.length * 2;
+  const totalAchievements = accessibleNodes.length * 2;
   const earnedAchievements = userAchievements.filter((a) => a.earned).length;
 
   const childCounts = allNodes.reduce<Record<string, number>>((acc, n) => {
-    if (n.parentCode) {
+    if (n.parentCode && accessibleCodes.has(n.code)) {
       acc[n.parentCode] = (acc[n.parentCode] ?? 0) + 1;
     }
     return acc;
@@ -96,7 +121,7 @@ router.get("/summary", async (req, res): Promise<void> => {
     .slice(0, 5);
 
   const recentlyOpened = recentProgress
-    .map((p) => allNodes.find((n) => n.code === p.nodeCode))
+    .map((p) => accessibleNodes.find((n) => n.code === p.nodeCode))
     .filter(Boolean)
     .map((n) => ({
       code: n!.code,
@@ -178,7 +203,7 @@ router.post("/progress/open/:code", async (req, res): Promise<void> => {
       .where(and(eq(achievementsTable.userId, userId), eq(achievementsTable.code, achCode)));
   }
 
-  const progress = await getProgressData(userId);
+  const progress = await getProgressData(userId, tier);
   res.json(progress);
 });
 
@@ -250,7 +275,7 @@ router.post("/progress/read/:code", async (req, res): Promise<void> => {
       .where(and(eq(achievementsTable.userId, userId), eq(achievementsTable.code, achCode)));
   }
 
-  const progress = await getProgressData(userId);
+  const progress = await getProgressData(userId, tier);
   res.json(progress);
 });
 
@@ -258,12 +283,19 @@ router.get("/achievements", async (req, res): Promise<void> => {
   const userId = getAuthUserId(req, res);
   if (!userId) return;
 
+  const tier = req.session.userTier ?? 0;
+
   const userAchievements = await db.select().from(achievementsTable).where(eq(achievementsTable.userId, userId));
   const allNodes = await db.select().from(nodesTable);
 
+  const nodeMap = new Map(allNodes.map((n) => [n.code, n]));
+  const accessibleNodes = allNodes.filter(
+    (n) => canAccess(n.code, tier) && isInAllowedSubtree(n.code, nodeMap, tier),
+  );
+
   const earnedMap = new Map(userAchievements.map((a) => [a.code, a]));
 
-  const achievements = allNodes.flatMap((node) => {
+  const achievements = accessibleNodes.flatMap((node) => {
     const exploredCode = `explored_${node.code}`;
     const readCode = `read_${node.code}`;
     const exploredAch = earnedMap.get(exploredCode);

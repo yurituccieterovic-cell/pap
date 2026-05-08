@@ -16,24 +16,41 @@ router.get("/nodes", async (req, res): Promise<void> => {
   const tier = req.session.userTier ?? 0;
 
   const allNodes = await db.select().from(nodesTable);
+  const nodeMap = new Map(allNodes.map((n) => [n.code, n]));
+
+  if (parentCode) {
+    if (!canAccess(parentCode, tier) || !isInAllowedSubtree(parentCode, nodeMap, tier)) {
+      res.status(403).json({ error: "Acesso negado para o seu nível de conta" });
+      return;
+    }
+  }
+
+  const accessibleCodes = new Set(
+    allNodes
+      .filter((n) => canAccess(n.code, tier) && isInAllowedSubtree(n.code, nodeMap, tier))
+      .map((n) => n.code),
+  );
 
   let filteredNodes;
   if (parentCode) {
-    filteredNodes = allNodes.filter((n) => n.parentCode === parentCode);
+    filteredNodes = allNodes.filter(
+      (n) => n.parentCode === parentCode && accessibleCodes.has(n.code),
+    );
   } else {
-    filteredNodes = allNodes.filter((n) => n.parentCode === null || n.parentCode === undefined);
+    filteredNodes = allNodes.filter(
+      (n) =>
+        (n.parentCode === null || n.parentCode === undefined) && accessibleCodes.has(n.code),
+    );
   }
 
   filteredNodes.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
   const childCounts = allNodes.reduce<Record<string, number>>((acc, n) => {
-    if (n.parentCode) {
+    if (n.parentCode && accessibleCodes.has(n.code)) {
       acc[n.parentCode] = (acc[n.parentCode] ?? 0) + 1;
     }
     return acc;
   }, {});
-
-  const nodeMap = new Map(allNodes.map((n) => [n.code, n]));
 
   const result = filteredNodes.map((n) => ({
     code: n.code,
@@ -42,7 +59,7 @@ router.get("/nodes", async (req, res): Promise<void> => {
     parentCode: n.parentCode ?? null,
     childCount: childCounts[n.code] ?? 0,
     level: n.level,
-    locked: !canAccess(n.code, tier) || !isInAllowedSubtree(n.code, nodeMap, tier),
+    locked: false,
   }));
 
   res.json(result);
@@ -76,15 +93,21 @@ router.get("/nodes/:code", async (req, res): Promise<void> => {
     return;
   }
 
+  const accessibleCodes = new Set(
+    allNodes
+      .filter((n) => canAccess(n.code, tier) && isInAllowedSubtree(n.code, nodeMap, tier))
+      .map((n) => n.code),
+  );
+
   const childCounts = allNodes.reduce<Record<string, number>>((acc, n) => {
-    if (n.parentCode) {
+    if (n.parentCode && accessibleCodes.has(n.code)) {
       acc[n.parentCode] = (acc[n.parentCode] ?? 0) + 1;
     }
     return acc;
   }, {});
 
   const children = allNodes
-    .filter((n) => n.parentCode === node.code)
+    .filter((n) => n.parentCode === node.code && accessibleCodes.has(n.code))
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
     .map((n) => ({
       code: n.code,
@@ -93,7 +116,7 @@ router.get("/nodes/:code", async (req, res): Promise<void> => {
       parentCode: n.parentCode ?? null,
       childCount: childCounts[n.code] ?? 0,
       level: n.level,
-      locked: !canAccess(n.code, tier),
+      locked: false,
     }));
 
   res.json({
