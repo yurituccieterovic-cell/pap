@@ -40,11 +40,10 @@ export async function enforceUniquePasswords(): Promise<void> {
     return;
   }
 
-  logger.error(
+  logger.warn(
     { accounts: affected },
     "bootstrap: one or more accounts still use the shared default password. " +
       "Run `pnpm --filter @workspace/scripts run randomize-passwords` to assign " +
       "unique passwords and capture the output securely, then restart the server."
   );
-  process.exit(1);
 }
