@@ -60,7 +60,7 @@ router.get("/social/me", requireAuth, async (req, res) => {
   const fRows = await db
     .select({ id: friendshipsTable.id })
     .from(friendshipsTable)
-    .where(eq(friendshipsTable.userId, userId));
+    .where(and(eq(friendshipsTable.userId, userId), eq(friendshipsTable.status, "accepted")));
   res.json({
     id: user.id,
     login: user.login,
@@ -111,7 +111,7 @@ router.get("/social/friends", requireAuth, async (req, res) => {
   const rows = await db
     .select({ friendId: friendshipsTable.friendId })
     .from(friendshipsTable)
-    .where(eq(friendshipsTable.userId, userId));
+    .where(and(eq(friendshipsTable.userId, userId), eq(friendshipsTable.status, "accepted")));
   if (rows.length === 0) {
     res.json([]);
     return;
@@ -127,7 +127,26 @@ router.get("/social/friends", requireAuth, async (req, res) => {
   res.json(result);
 });
 
-// POST /social/friends
+// GET /social/friend-requests — incoming pending requests for the current user
+router.get("/social/friend-requests", requireAuth, async (req, res) => {
+  const userId = req.session.userId!;
+  const rows = await db
+    .select({ requesterId: friendshipsTable.userId })
+    .from(friendshipsTable)
+    .where(and(eq(friendshipsTable.friendId, userId), eq(friendshipsTable.status, "pending")));
+  if (rows.length === 0) {
+    res.json([]);
+    return;
+  }
+  const ids = rows.map((r) => r.requesterId);
+  const requesters = await db
+    .select({ id: usersTable.id, displayName: usersTable.displayName, tier: usersTable.tier, userCode: usersTable.userCode })
+    .from(usersTable)
+    .where(inArray(usersTable.id, ids));
+  res.json(requesters);
+});
+
+// POST /social/friends — send a friend request (pending, no reverse row)
 router.post("/social/friends", requireAuth, async (req, res) => {
   const userId = req.session.userId!;
   const { userCode } = req.body as { userCode?: string };
@@ -148,19 +167,118 @@ router.post("/social/friends", requireAuth, async (req, res) => {
     res.status(400).json({ error: "Você não pode adicionar a si mesmo" });
     return;
   }
-  const [ex] = await db
-    .select()
+  // Check if already accepted friends (either direction)
+  const [alreadyFriend] = await db
+    .select({ id: friendshipsTable.id })
     .from(friendshipsTable)
-    .where(and(eq(friendshipsTable.userId, userId), eq(friendshipsTable.friendId, friend.id)))
+    .where(
+      and(
+        or(
+          and(eq(friendshipsTable.userId, userId), eq(friendshipsTable.friendId, friend.id)),
+          and(eq(friendshipsTable.userId, friend.id), eq(friendshipsTable.friendId, userId)),
+        ),
+        eq(friendshipsTable.status, "accepted"),
+      )
+    )
     .limit(1);
-  if (ex) {
+  if (alreadyFriend) {
     res.status(409).json({ error: "Já são amigos" });
     return;
   }
-  await db
-    .insert(friendshipsTable)
-    .values([{ userId, friendId: friend.id }, { userId: friend.id, friendId: userId }]);
-  res.json({ ok: true, friend: { ...friend, score: await calculateScore(friend.id) } });
+  // Check if a pending request already exists (either direction)
+  const [pendingRow] = await db
+    .select({ id: friendshipsTable.id, userId: friendshipsTable.userId })
+    .from(friendshipsTable)
+    .where(
+      and(
+        or(
+          and(eq(friendshipsTable.userId, userId), eq(friendshipsTable.friendId, friend.id)),
+          and(eq(friendshipsTable.userId, friend.id), eq(friendshipsTable.friendId, userId)),
+        ),
+        eq(friendshipsTable.status, "pending"),
+      )
+    )
+    .limit(1);
+  if (pendingRow) {
+    if (pendingRow.userId === friend.id) {
+      // They already sent us a request — auto-accept it atomically
+      await db.transaction(async (tx) => {
+        await tx
+          .update(friendshipsTable)
+          .set({ status: "accepted" })
+          .where(eq(friendshipsTable.id, pendingRow.id));
+        await tx
+          .insert(friendshipsTable)
+          .values({ userId, friendId: friend.id, status: "accepted" })
+          .onConflictDoUpdate({
+            target: [friendshipsTable.userId, friendshipsTable.friendId],
+            set: { status: "accepted" },
+          });
+      });
+      res.json({ ok: true, accepted: true, friend: { ...friend, score: await calculateScore(friend.id) } });
+      return;
+    }
+    res.status(409).json({ error: "Solicitação já enviada" });
+    return;
+  }
+  // Create the pending request (one-directional)
+  await db.insert(friendshipsTable).values({ userId, friendId: friend.id, status: "pending" });
+  res.json({ ok: true, accepted: false, friend: { ...friend } });
+});
+
+// POST /social/friends/:requesterId/accept — accept an incoming friend request
+router.post("/social/friends/:requesterId/accept", requireAuth, async (req, res) => {
+  const userId = req.session.userId!;
+  const requesterId = parseInt(req.params.requesterId ?? "0", 10);
+  if (!requesterId) {
+    res.status(400).json({ error: "ID inválido" });
+    return;
+  }
+  const [pendingRow] = await db
+    .select({ id: friendshipsTable.id })
+    .from(friendshipsTable)
+    .where(and(
+      eq(friendshipsTable.userId, requesterId),
+      eq(friendshipsTable.friendId, userId),
+      eq(friendshipsTable.status, "pending"),
+    ))
+    .limit(1);
+  if (!pendingRow) {
+    res.status(404).json({ error: "Solicitação não encontrada" });
+    return;
+  }
+  await db.transaction(async (tx) => {
+    await tx
+      .update(friendshipsTable)
+      .set({ status: "accepted" })
+      .where(eq(friendshipsTable.id, pendingRow.id));
+    await tx
+      .insert(friendshipsTable)
+      .values({ userId, friendId: requesterId, status: "accepted" })
+      .onConflictDoUpdate({
+        target: [friendshipsTable.userId, friendshipsTable.friendId],
+        set: { status: "accepted" },
+      });
+  });
+  res.json({ ok: true });
+});
+
+// POST /social/friends/:requesterId/decline — decline or cancel a friend request
+router.post("/social/friends/:requesterId/decline", requireAuth, async (req, res) => {
+  const userId = req.session.userId!;
+  const requesterId = parseInt(req.params.requesterId ?? "0", 10);
+  if (!requesterId) {
+    res.status(400).json({ error: "ID inválido" });
+    return;
+  }
+  // Remove the pending request (either as recipient or requester, for cancel support)
+  await db.delete(friendshipsTable).where(
+    or(
+      and(eq(friendshipsTable.userId, requesterId), eq(friendshipsTable.friendId, userId), eq(friendshipsTable.status, "pending")),
+      and(eq(friendshipsTable.userId, userId), eq(friendshipsTable.friendId, requesterId), eq(friendshipsTable.status, "pending")),
+    )
+  );
+  res.json({ ok: true });
 });
 
 // DELETE /social/friends/:friendId
@@ -200,7 +318,11 @@ async function isFriend(userId: number, friendId: number): Promise<boolean> {
   const [row] = await db
     .select({ id: friendshipsTable.id })
     .from(friendshipsTable)
-    .where(and(eq(friendshipsTable.userId, userId), eq(friendshipsTable.friendId, friendId)))
+    .where(and(
+      eq(friendshipsTable.userId, userId),
+      eq(friendshipsTable.friendId, friendId),
+      eq(friendshipsTable.status, "accepted"),
+    ))
     .limit(1);
   return !!row;
 }

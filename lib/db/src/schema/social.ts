@@ -5,6 +5,7 @@ export const friendshipsTable = pgTable("friendships", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => usersTable.id),
   friendId: integer("friend_id").notNull().references(() => usersTable.id),
+  status: text("status").notNull().default("accepted"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [unique("friendships_pair").on(t.userId, t.friendId)]);
 

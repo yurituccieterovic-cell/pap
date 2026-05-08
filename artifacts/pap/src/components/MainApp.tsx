@@ -1819,6 +1819,12 @@ interface SocialFriend {
   userCode: string | null;
   score: number;
 }
+interface SocialRequester {
+  id: number;
+  displayName: string | null;
+  tier: number;
+  userCode: string | null;
+}
 interface SocialMessage {
   id: number;
   senderId: number;
@@ -1905,6 +1911,14 @@ function SocialModal({ onClose }: { onClose: () => void }) {
     staleTime: 15000,
   });
 
+  const { data: friendRequests = [], refetch: refetchRequests } = useQuery<SocialRequester[]>({
+    queryKey: ["social", "friend-requests"],
+    queryFn: () => sfetch("/social/friend-requests").then((r) => r.json()),
+    enabled: !!user,
+    staleTime: 10000,
+    refetchInterval: 15000,
+  });
+
   const { data: messages = [] } = useQuery<SocialMessage[]>({
     queryKey: ["social", "messages", selectedFriend?.id],
     queryFn: () => sfetch(`/social/messages/${selectedFriend!.id}`).then((r) => r.json()),
@@ -1943,8 +1957,31 @@ function SocialModal({ onClose }: { onClose: () => void }) {
     if (!addInput.trim()) return;
     const r = await sfetch("/social/friends", { method: "POST", body: JSON.stringify({ userCode: addInput.trim().toLowerCase() }) });
     const d = await r.json();
-    if (r.ok) { setAddInput(""); setAddMsg("Amigo adicionado!"); void refetchFriends(); setTimeout(() => setAddMsg(""), 3000); }
-    else setAddMsg(d.error ?? "Erro");
+    if (r.ok) {
+      setAddInput("");
+      if (d.accepted) {
+        setAddMsg("Amigo adicionado!");
+        void refetchFriends();
+        void refetchProfile();
+      } else {
+        setAddMsg("Solicitacao enviada!");
+      }
+      setTimeout(() => setAddMsg(""), 3000);
+    } else {
+      setAddMsg(d.error ?? "Erro");
+    }
+  };
+
+  const handleAcceptRequest = async (requesterId: number) => {
+    await sfetch(`/social/friends/${requesterId}/accept`, { method: "POST" });
+    void refetchFriends();
+    void refetchRequests();
+    void refetchProfile();
+  };
+
+  const handleDeclineRequest = async (requesterId: number) => {
+    await sfetch(`/social/friends/${requesterId}/decline`, { method: "POST" });
+    void refetchRequests();
   };
 
   const handleRemoveFriend = async (friendId: number) => {
@@ -2037,6 +2074,7 @@ function SocialModal({ onClose }: { onClose: () => void }) {
             <SocialFriendsView
               profile={profile}
               friends={friends as SocialFriend[]}
+              friendRequests={friendRequests}
               addInput={addInput}
               setAddInput={setAddInput}
               onAdd={handleAddFriend}
@@ -2045,6 +2083,8 @@ function SocialModal({ onClose }: { onClose: () => void }) {
               onSelect={handleSelectFriend}
               onCopyCode={handleCopyCode}
               copied={copied}
+              onAcceptRequest={handleAcceptRequest}
+              onDeclineRequest={handleDeclineRequest}
             />
           ) : selectedFriend ? (
             <SocialFriendDetail
@@ -2177,11 +2217,12 @@ function SocialProfileView({
 
 /* ── Friends management view ───────────────────────────────────────────────── */
 function SocialFriendsView({
-  profile, friends, addInput, setAddInput, onAdd, addMsg,
-  onRemove, onSelect, onCopyCode, copied,
+  profile, friends, friendRequests, addInput, setAddInput, onAdd, addMsg,
+  onRemove, onSelect, onCopyCode, copied, onAcceptRequest, onDeclineRequest,
 }: {
   profile: SocialProfile | undefined;
   friends: SocialFriend[];
+  friendRequests: SocialRequester[];
   addInput: string;
   setAddInput: (v: string) => void;
   onAdd: () => void;
@@ -2190,6 +2231,8 @@ function SocialFriendsView({
   onSelect: (f: SocialFriend) => void;
   onCopyCode: () => void;
   copied: boolean;
+  onAcceptRequest: (id: number) => void;
+  onDeclineRequest: (id: number) => void;
 }) {
   return (
     <div className="flex flex-col gap-4 p-5">
@@ -2204,6 +2247,51 @@ function SocialFriendsView({
             </button>
           </div>
           <p className="text-[9px] text-white/20 leading-relaxed">Compartilhe para que amigos te adicionem</p>
+        </div>
+      )}
+
+      {/* Incoming friend requests */}
+      {friendRequests.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[9px] uppercase tracking-widest text-white/30 font-bold mb-0.5">
+            Solicitacoes ({friendRequests.length})
+          </p>
+          {friendRequests.map((r) => (
+            <div
+              key={r.id}
+              className="flex items-center gap-2.5 p-2.5 rounded-xl border border-secondary/25 transition-colors"
+              style={{ background: "hsl(var(--secondary)/0.06)" }}
+            >
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0"
+                style={avatarStyle(r.id)}
+              >
+                {avatarInitial(r.displayName, r.userCode)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-white truncate">{r.displayName ?? r.userCode}</p>
+                <span className={`text-[9px] font-bold ${tierColor(r.tier)}`}>{tierLabel(r.tier)}</span>
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <button
+                  onClick={() => onAcceptRequest(r.id)}
+                  className="px-2 py-1 rounded-lg text-[10px] font-black"
+                  style={{ background: "hsl(var(--secondary))", color: "white" }}
+                  title="Aceitar"
+                >
+                  Aceitar
+                </button>
+                <button
+                  onClick={() => onDeclineRequest(r.id)}
+                  className="px-2 py-1 rounded-lg text-[10px] font-bold text-white/40 hover:text-red-400 transition-colors"
+                  style={{ background: "rgba(255,255,255,0.06)" }}
+                  title="Recusar"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -2230,7 +2318,7 @@ function SocialFriendsView({
           </motion.button>
         </div>
         {addMsg && (
-          <p className={`text-[10px] font-medium ${addMsg.includes("adicionado") ? "text-accent" : "text-red-400"}`}>
+          <p className={`text-[10px] font-medium ${addMsg.includes("adicionado") || addMsg.includes("enviada") ? "text-accent" : "text-red-400"}`}>
             {addMsg}
           </p>
         )}
