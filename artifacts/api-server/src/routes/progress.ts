@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
 import { db, nodeProgressTable, achievementsTable, nodesTable } from "@workspace/db";
 import { OpenNodeParams, ReadNodeParams } from "@workspace/api-zod";
+import { canAccess, isInAllowedSubtree } from "../lib/canAccess";
 import type { Request, Response } from "express";
 
 const router: IRouter = Router();
@@ -128,6 +129,22 @@ router.post("/progress/open/:code", async (req, res): Promise<void> => {
 
   const { code } = params.data;
 
+  const tier = req.session.userTier ?? 0;
+
+  const allNodes = await db.select().from(nodesTable);
+  const nodeMap = new Map(allNodes.map((n) => [n.code, n]));
+  const node = nodeMap.get(code);
+
+  if (!node) {
+    res.status(404).json({ error: "Nó não encontrado" });
+    return;
+  }
+
+  if (!canAccess(code, tier) || !isInAllowedSubtree(code, nodeMap, tier)) {
+    res.status(403).json({ error: "Acesso negado para o seu nível de conta" });
+    return;
+  }
+
   const [existing] = await db.select().from(nodeProgressTable)
     .where(and(eq(nodeProgressTable.userId, userId), eq(nodeProgressTable.nodeCode, code)));
 
@@ -143,7 +160,6 @@ router.post("/progress/open/:code", async (req, res): Promise<void> => {
   const [existingAch] = await db.select().from(achievementsTable)
     .where(and(eq(achievementsTable.userId, userId), eq(achievementsTable.code, achCode)));
   if (!existingAch) {
-    const [node] = await db.select().from(nodesTable).where(eq(nodesTable.code, code));
     if (node) {
       await db.insert(achievementsTable).values({
         userId,
@@ -178,6 +194,22 @@ router.post("/progress/read/:code", async (req, res): Promise<void> => {
 
   const { code } = params.data;
 
+  const tier = req.session.userTier ?? 0;
+
+  const allNodes = await db.select().from(nodesTable);
+  const nodeMap = new Map(allNodes.map((n) => [n.code, n]));
+  const node = nodeMap.get(code);
+
+  if (!node) {
+    res.status(404).json({ error: "Nó não encontrado" });
+    return;
+  }
+
+  if (!canAccess(code, tier) || !isInAllowedSubtree(code, nodeMap, tier)) {
+    res.status(403).json({ error: "Acesso negado para o seu nível de conta" });
+    return;
+  }
+
   const [existing] = await db.select().from(nodeProgressTable)
     .where(and(eq(nodeProgressTable.userId, userId), eq(nodeProgressTable.nodeCode, code)));
 
@@ -200,7 +232,6 @@ router.post("/progress/read/:code", async (req, res): Promise<void> => {
   const [existingAch] = await db.select().from(achievementsTable)
     .where(and(eq(achievementsTable.userId, userId), eq(achievementsTable.code, achCode)));
   if (!existingAch) {
-    const [node] = await db.select().from(nodesTable).where(eq(nodesTable.code, code));
     if (node) {
       await db.insert(achievementsTable).values({
         userId,

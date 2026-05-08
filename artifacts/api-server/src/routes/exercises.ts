@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { nodesTable, exercisesTable, exerciseAttemptsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { openai } from "@workspace/integrations-openai-ai-server";
-import { canAccess } from "../lib/canAccess";
+import { canAccess, isInAllowedSubtree } from "../lib/canAccess";
 
 const router = Router();
 
@@ -111,11 +111,15 @@ router.get("/exercises", async (req, res) => {
     return;
   }
 
-  const [node] = await db
-    .select()
-    .from(nodesTable)
-    .where(eq(nodesTable.code, nodeCode))
-    .limit(1);
+  const allNodes = await db.select().from(nodesTable);
+  const nodeMap = new Map(allNodes.map((n) => [n.code, n]));
+
+  if (!isInAllowedSubtree(nodeCode, nodeMap, tier)) {
+    res.status(403).json({ error: "Acesso negado para o seu nível de conta" });
+    return;
+  }
+
+  const node = nodeMap.get(nodeCode);
 
   if (!node) {
     res.status(404).json({ error: "Nó não encontrado" });
@@ -200,6 +204,13 @@ router.post("/exercises/attempt", async (req, res) => {
   }
 
   if (!canAccess(exercise.nodeCode, tier)) {
+    res.status(403).json({ error: "Acesso negado para o seu nível de conta" });
+    return;
+  }
+
+  const allNodesForAttempt = await db.select().from(nodesTable);
+  const attemptNodeMap = new Map(allNodesForAttempt.map((n) => [n.code, n]));
+  if (!isInAllowedSubtree(exercise.nodeCode, attemptNodeMap, tier)) {
     res.status(403).json({ error: "Acesso negado para o seu nível de conta" });
     return;
   }

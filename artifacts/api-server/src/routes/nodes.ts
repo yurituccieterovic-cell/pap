@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, nodesTable } from "@workspace/db";
 import { ListNodesQueryParams, GetNodeParams } from "@workspace/api-zod";
-import { canAccess } from "../lib/canAccess";
+import { canAccess, isInAllowedSubtree } from "../lib/canAccess";
 
 const router: IRouter = Router();
 
@@ -33,6 +33,8 @@ router.get("/nodes", async (req, res): Promise<void> => {
     return acc;
   }, {});
 
+  const nodeMap = new Map(allNodes.map((n) => [n.code, n]));
+
   const result = filteredNodes.map((n) => ({
     code: n.code,
     title: n.title,
@@ -40,7 +42,7 @@ router.get("/nodes", async (req, res): Promise<void> => {
     parentCode: n.parentCode ?? null,
     childCount: childCounts[n.code] ?? 0,
     level: n.level,
-    locked: !canAccess(n.code, tier),
+    locked: !canAccess(n.code, tier) || !isInAllowedSubtree(n.code, nodeMap, tier),
   }));
 
   res.json(result);
@@ -65,6 +67,12 @@ router.get("/nodes/:code", async (req, res): Promise<void> => {
 
   if (!node) {
     res.status(404).json({ error: "Node not found" });
+    return;
+  }
+
+  const nodeMap = new Map(allNodes.map((n) => [n.code, n]));
+  if (!isInAllowedSubtree(node.code, nodeMap, tier)) {
+    res.status(403).json({ error: "Acesso negado para o seu nível de conta" });
     return;
   }
 
