@@ -195,10 +195,24 @@ router.get("/social/search", requireAuth, async (req, res) => {
   res.json(results);
 });
 
+async function isFriend(userId: number, friendId: number): Promise<boolean> {
+  if (!friendId || friendId === userId) return false;
+  const [row] = await db
+    .select({ id: friendshipsTable.id })
+    .from(friendshipsTable)
+    .where(and(eq(friendshipsTable.userId, userId), eq(friendshipsTable.friendId, friendId)))
+    .limit(1);
+  return !!row;
+}
+
 // GET /social/messages/:friendId
 router.get("/social/messages/:friendId", requireAuth, async (req, res) => {
   const userId = req.session.userId!;
   const friendId = parseInt(req.params.friendId ?? "0", 10);
+  if (!(await isFriend(userId, friendId))) {
+    res.status(403).json({ error: "Não são amigos" });
+    return;
+  }
   const messages = await db
     .select()
     .from(friendMessagesTable)
@@ -217,6 +231,10 @@ router.get("/social/messages/:friendId", requireAuth, async (req, res) => {
 router.post("/social/messages/:friendId", requireAuth, async (req, res) => {
   const userId = req.session.userId!;
   const friendId = parseInt(req.params.friendId ?? "0", 10);
+  if (!(await isFriend(userId, friendId))) {
+    res.status(403).json({ error: "Não são amigos" });
+    return;
+  }
   const { content } = req.body as { content?: string };
   if (!content?.trim()) {
     res.status(400).json({ error: "Conteúdo vazio" });
@@ -233,6 +251,10 @@ router.post("/social/messages/:friendId", requireAuth, async (req, res) => {
 router.get("/social/shared-note/:friendId", requireAuth, async (req, res) => {
   const userId = req.session.userId!;
   const friendId = parseInt(req.params.friendId ?? "0", 10);
+  if (!(await isFriend(userId, friendId))) {
+    res.status(403).json({ error: "Não são amigos" });
+    return;
+  }
   const [u1, u2] = [Math.min(userId, friendId), Math.max(userId, friendId)];
   const [note] = await db
     .select()
@@ -246,6 +268,10 @@ router.get("/social/shared-note/:friendId", requireAuth, async (req, res) => {
 router.put("/social/shared-note/:friendId", requireAuth, async (req, res) => {
   const userId = req.session.userId!;
   const friendId = parseInt(req.params.friendId ?? "0", 10);
+  if (!(await isFriend(userId, friendId))) {
+    res.status(403).json({ error: "Não são amigos" });
+    return;
+  }
   const { content } = req.body as { content?: string };
   const [u1, u2] = [Math.min(userId, friendId), Math.max(userId, friendId)];
   await db
