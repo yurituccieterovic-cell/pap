@@ -5,6 +5,7 @@ import { usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { LoginBody } from "@workspace/api-zod";
 import bcrypt from "bcryptjs";
+import { allowedOrigins } from "../lib/allowedOrigins";
 
 const router = Router();
 
@@ -18,6 +19,24 @@ const loginRateLimit = rateLimit({
 });
 
 router.post("/auth/login", loginRateLimit, async (req, res) => {
+  const origin = req.headers["origin"];
+  const referer = req.headers["referer"];
+
+  let originToCheck: string | undefined = origin;
+  if (originToCheck === undefined && referer) {
+    try {
+      originToCheck = new URL(referer).origin;
+    } catch {
+      res.status(403).json({ error: "Origem não permitida" });
+      return;
+    }
+  }
+
+  if (originToCheck !== undefined && !allowedOrigins.has(originToCheck)) {
+    res.status(403).json({ error: "Origem não permitida" });
+    return;
+  }
+
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Dados inválidos" });
