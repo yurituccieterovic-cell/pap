@@ -1,0 +1,16 @@
+
+# Aliança Panorama: Anatomia de uma Contradição Operacional
+
+O Projeto Aliança Panorama existe há mais de uma década como ideia e há poucos meses como artefato. Idealizado em 2014 pela Sociedade Tucci, implementado em 2026 com auxílio do Replit e da Perplexity, ele carrega a ambição legítima de gamificar a educação infantil através de uma metáfora visual sofisticada: raízes orgânicas, nódulos interativos, camadas de descoberta progressiva. A arquitetura pedagógica é coerente. A execução técnica, entretanto, opera em estado de superposição — simultaneamente segura e vulnerável, pronta e inacabada.
+
+O diagnóstico de segurança revela a fratura central. O scan de código próprio declara ausência de ameaças; a varredura de dependências identifica onze vulnerabilidades não resolvidas, quatro delas de severidade alta. Lodash, path-to-regexp, picomatch — bibliotecas que tocam parsing de entrada e roteamento, vetores clássicos de injeção e travessia de diretório. O problema não são as CVEs em si, mas o que sua permanência indica: patches disponíveis há anos ignorados, processo de manutenção inexistente ou abandonado. Isso é falência organizacional, não técnica.
+
+A infraestrutura está em produção pública com banco de dados conectado, autoscale de 2 vCPU e 4 GiB de RAM. O histórico recente mostra quatro deploys falhados antes de duas publicações bem-sucedidas — instabilidade que exige investigação antes de qualquer expansão. As seis contas de acesso compartilham senha unificada, configuração adequada para demonstração, indefensável para produção com dados sensíveis.
+
+O backlog acumula dezenas de itens sem hierarquia: correções de UX (botão de fechar mais visível, cabeçalho fixo, responsividade mobile), funcionalidades a implementar (calculadora, rádio, modos de tela), ajustes de paleta cromática (azul tendendo ao verde, cinza médio-claro para a nave). A assistente Isa deve persistir conversas por autenticação ou cookies — requisito que tensiona a arquitetura existente sem definição clara de coexistência. Os códigos da raiz singular permanecem secretos; nódulos duplicados seguem a regra do menor número, denominados enxertos.
+
+A prioridade é inequívoca: mitigar as vulnerabilidades de dependências antes de qualquer movimento comercial ou exposição ampla. Em vendas B2B, compliance de segurança é frequentemente item de checklist pré-contrato; em educação infantil, a confiança dos pais é inegociável. Depois, estabilizar pipelines, rotacionar credenciais, implementar correções de UX críticas.
+
+O PAP demonstra base funcional sólida e visão pedagógica clara. Mas opera em esquizofrenia: protótipo de teste e ambiente de produção habitam o mesmo corpo. Resolver essa contradição não é tarefa opcional — é pré-condição de existência. A Sociedade Tucci construiu uma fortaleza conceitual sobre fundações que ainda tremem. O próximo passo não é expandir; é consolidar.
+
+───────────────────────────────────────────────────────────
