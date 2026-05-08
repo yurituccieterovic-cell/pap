@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import session from "express-session";
 import path from "path";
+import { fileURLToPath } from "url";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { allowedOrigins } from "./lib/allowedOrigins";
@@ -65,10 +66,20 @@ app.use(
 app.use("/api", router);
 
 if (process.env["NODE_ENV"] === "production") {
-  const staticDir = path.join(process.cwd(), "artifacts/pap/dist/public");
+  // Use import.meta.url so the path is correct regardless of process.cwd()
+  // Bundle lives at artifacts/api-server/dist/index.mjs
+  // PAP build output lives at artifacts/pap/dist/public/
+  const bundleDir = path.dirname(fileURLToPath(import.meta.url));
+  const staticDir = path.resolve(bundleDir, "../../pap/dist/public");
+  logger.info({ staticDir }, "production: serving static files");
   app.use(express.static(staticDir));
   app.get("/*splat", (_req, res) => {
-    res.sendFile(path.join(staticDir, "index.html"));
+    res.sendFile(path.join(staticDir, "index.html"), (err) => {
+      if (err) {
+        logger.error({ err, staticDir }, "production: failed to send index.html");
+        res.status(500).send("Erro ao carregar a aplicação");
+      }
+    });
   });
 }
 
