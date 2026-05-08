@@ -16,6 +16,11 @@ const DEFAULT_PASSWORD = "pap";
  * requests while a known shared default credential is in place.
  */
 export async function enforceUniquePasswords(): Promise<void> {
+  if (process.env["NODE_ENV"] !== "production") {
+    logger.info("bootstrap: password uniqueness check skipped in non-production environment");
+    return;
+  }
+
   const users = await db.select().from(usersTable);
 
   const affected: string[] = [];
