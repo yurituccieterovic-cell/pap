@@ -14,6 +14,7 @@ Production assumptions for scanning:
 - **User accounts and sessions** — session cookies plus user identity and tier in the server-side session. Compromise enables impersonation and access to tier-gated content and personalized features.
 - **Credentials** — user login names and passwords stored in the `users` table. Credential compromise affects every account and can lead to privilege escalation to the tier-5 dev account.
 - **User-generated study data** — notes, progress state, achievements, daily activity, and exercise attempts. These are the primary user-specific records and must not be readable or writable across accounts.
+- **Social data** — friend relationships, direct messages, shared notes, and user codes. These records are relationship-scoped and must not be readable or writable outside the intended friendship boundary.
 - **Educational content and tier-gated node content** — the knowledge tree, node content, and AI-generated exercises. Lower-tier and unauthenticated users must not gain access to content reserved for higher tiers.
 - **Application secrets** — `DATABASE_URL`, `SESSION_SECRET`, and OpenAI credentials used through the integration package. Exposure would permit database compromise, session forgery, or abuse of paid AI resources.
 
@@ -29,8 +30,8 @@ Production assumptions for scanning:
 ## Scan Anchors
 
 - **Production entry points:** `artifacts/api-server/src/app.ts`, `artifacts/api-server/src/routes/*.ts`, `artifacts/pap/src/components/MainApp.tsx`.
-- **Highest-risk areas:** `artifacts/api-server/src/routes/auth.ts`, `notes.ts`, `progress.ts`, `exercises.ts`, plus `lib/db/src/schema/users.ts`, `notes.ts`, and `progress.ts`.
-- **Public vs authenticated vs admin surfaces:** `/api/healthz` is public; session-backed auth lives under `/api/auth/*`; notes, progress, achievements, daily activity, and exercise attempt flows must be treated as authenticated user data; tiered node access is an authorization boundary.
+- **Highest-risk areas:** `artifacts/api-server/src/routes/auth.ts`, `social.ts`, `nodes.ts`, `progress.ts`, `exercises.ts`, plus `artifacts/api-server/src/lib/canAccess.ts` and `lib/db/src/schema/{users,social,progress}.ts`.
+- **Public vs authenticated vs admin surfaces:** `/api/healthz` is public; session-backed auth lives under `/api/auth/*`; notes, progress, achievements, daily activity, exercise attempt flows, and all `/api/social/*` routes are authenticated user data; tiered node access is an authorization boundary and the client root selector (`rootCodeForTier`) is not itself an authorization control.
 - **Usually ignore unless proven reachable:** `artifacts/mockup-sandbox/`, generated `dist/` outputs, and codegen outputs except when confirming surface shape.
 
 ## Threat Categories
@@ -41,11 +42,11 @@ Authentication is implemented with Express sessions and application-managed cred
 
 ### Tampering
 
-The browser is untrusted. The server must prevent users from creating, modifying, or deleting notes, progress records, achievements, and exercise attempts outside their own account. Tier checks must be enforced server-side rather than relying on frontend lock icons or hidden controls.
+The browser is untrusted. The server must prevent users from creating, modifying, or deleting notes, progress records, achievements, exercise attempts, messages, and shared social notes outside their own account or approved friendship relationships. Tier checks must be enforced server-side rather than relying on frontend lock icons, hidden controls, or the UI's tier-based root-node selection.
 
 ### Information Disclosure
 
-User study data is sensitive within the context of the platform even if it is not financial data. API responses for notes, progress, achievements, daily activity, and attempts must be scoped to the authenticated user, and higher-tier node content must not be exposed to lower-tier users. Secrets and cookies must stay out of logs and client bundles.
+User study data is sensitive within the context of the platform even if it is not financial data. API responses for notes, progress, achievements, daily activity, attempts, messages, and shared social notes must be scoped to the authenticated user and intended friend relationship, and higher-tier node content must not be exposed to lower-tier users. Secrets and cookies must stay out of logs and client bundles.
 
 ### Denial of Service
 
@@ -53,4 +54,4 @@ The exercise generation route can trigger external AI usage and database writes.
 
 ### Elevation of Privilege
 
-The most important privilege boundaries are unauthenticated vs authenticated users and lower-tier vs higher-tier accounts. The application must enforce ownership and tier checks in API handlers, must not rely on globally shared tables for user-specific state, and must protect the highest-tier dev/root account from compromise through weak or shared credentials.
+The most important privilege boundaries are unauthenticated vs authenticated users and lower-tier vs higher-tier accounts. The application must enforce ownership, friendship, and tier checks in API handlers, must not rely on globally shared tables for user-specific state, and must protect the highest-tier dev/root account from compromise through weak or shared credentials.
