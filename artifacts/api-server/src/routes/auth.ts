@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { rateLimit } from "express-rate-limit";
 import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -7,7 +8,16 @@ import bcrypt from "bcryptjs";
 
 const router = Router();
 
-router.post("/auth/login", async (req, res) => {
+const loginRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Muitas tentativas de login. Tente novamente em 15 minutos." },
+  skipSuccessfulRequests: true,
+});
+
+router.post("/auth/login", loginRateLimit, async (req, res) => {
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Dados inválidos" });

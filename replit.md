@@ -38,7 +38,7 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - Contract-first API: OpenAPI spec → codegen → React Query hooks and Zod schemas. Never write API types by hand.
 - Square viewport (≈900×900px) enforced in `App.tsx` with black bars on desktop.
 - Knowledge tree root is tier-aware: tier ≥ 4 → root "0" (all branches); tier < 4 → root "1" (Ciências only). Lock enforced server-side via `canAccess(tier, code)`.
-- Auth: express-session with bcrypt-hashed passwords (cost 12). 6 users: guest/aluno1-4/root, all password "pap". Passwords are never stored or compared in plaintext.
+- Auth: express-session with bcrypt-hashed passwords (cost 12). 6 users: guest/aluno1-4/root. Passwords are never stored or compared in plaintext. Login endpoint is rate-limited (10 attempts per 15 min per IP). Run `pnpm --filter @workspace/scripts run randomize-passwords` to assign unique strong passwords to all accounts.
 - Exercises: AI-generated via OpenAI (3 MCQ per node), cached in DB, submitted attempts tracked.
 - Achievement system: two per node (explored + read). Read triggered after 30s of modal open. Achievements are stored per-user and lazily created on first earn; the full catalog is generated on-the-fly from nodes in API responses.
 - No `console.log` in server — use `req.log` in handlers, `logger` singleton elsewhere.
@@ -49,7 +49,7 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 ## Product
 
 - Space/universe themed UI in Portuguese, no emojis (Lucide icons only)
-- 6-tier user system: Visitante (0), Aluno I–IV (1–4), Dev (5). All password "pap".
+- 6-tier user system: Visitante (0), Aluno I–IV (1–4), Dev (5).
 - Hierarchical knowledge tree (57 nodes FUVEST 2026), tier-gated with lock icons
 - AI-generated 3-question FUVEST-style MCQ exercises per node (Aluno I+ only)
 - Spaceship cockpit dashboard: notes, map, social panels
@@ -71,7 +71,7 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - Social notes unique constraint: stored as (min(u1,u2), max(u1,u2)) so upsert works. Use onConflictDoUpdate with target [user1Id, user2Id].
 - Score formula: for each correct exercise_attempt with userId → nodeCode.length × 10 pts. Only exercise_attempts has userId (notes/node_progress/achievements now also have user_id per-user).
 - Notes, node_progress, and achievements all have `user_id NOT NULL`. Every route handler for these tables checks `req.session.userId` and returns 401 if not authenticated. All queries are scoped to the session user.
-- The DB originally had `password_plain` column in `users` — it was renamed to `password_hash` and all passwords re-hashed with bcrypt (cost 12). All 6 users have password "pap".
+- The DB originally had `password_plain` column in `users` — it was renamed to `password_hash` and all passwords re-hashed with bcrypt (cost 12). Run `pnpm --filter @workspace/scripts run randomize-passwords` to assign unique strong passwords to all accounts and print them once.
 - `drizzle-kit push` may prompt interactively for column renames — run migrations via executeSql or raw SQL if needed.
 - Orval zod output uses `mode: "single"` — generated schema names are PascalCase (e.g. `LoginBody`, not `loginBodySchema`).
 - `lib/api-zod/src/index.ts` must only export `./generated/api` (not a schemas folder).
