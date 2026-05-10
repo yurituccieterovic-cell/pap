@@ -20,3 +20,7 @@ run = "pnpm --filter @workspace/pap run dev"
 [services.env]
 PORT = "18434"
 BASE_PATH = "/"
+
+[services.production]
+serve = "static"
+publicDir = "dist/public"
