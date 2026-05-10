@@ -73,7 +73,7 @@ if (process.env["NODE_ENV"] === "production") {
   const staticDir = path.resolve(bundleDir, "../../pap/dist/public");
   logger.info({ staticDir }, "production: serving static files");
   app.use(express.static(staticDir));
-  app.get("/*splat", (_req, res) => {
+  app.use((_req, res) => {
     res.sendFile(path.join(staticDir, "index.html"), (err) => {
       if (err) {
         logger.error({ err, staticDir }, "production: failed to send index.html");
