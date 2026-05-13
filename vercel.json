@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/pap/(.*)",
+      "destination": "https://projetoaliancapanoramapap.replit.app/$1"
+    },
+    {
+      "source": "/pap",
+      "destination": "https://projetoaliancapanoramapap.replit.app/"
+    }
+  ]
+}
