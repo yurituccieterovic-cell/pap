@@ -23,4 +23,4 @@ BASE_PATH = "/"
 
 [services.production]
 serve = "static"
-publicDir = "dist/public"
+publicDir = "artifacts/pap/dist/public"
