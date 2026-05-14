@@ -47,7 +47,7 @@ async function getCredentials(): Promise<{ publishableKey: string; secretKey: st
 // WARNING: Never cache this client. Always call this function to get a fresh client.
 export async function getUncachableStripeClient(): Promise<Stripe> {
   const { secretKey } = await getCredentials();
-  return new Stripe(secretKey, { apiVersion: "2025-08-27.basil" });
+  return new Stripe(secretKey);
 }
 
 export async function getStripePublishableKey(): Promise<string> {

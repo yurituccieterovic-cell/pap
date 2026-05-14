@@ -22,6 +22,7 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - API codegen: Orval (from OpenAPI spec → React Query hooks)
 - Build: esbuild (CJS bundle for server)
 - AI: `@workspace/integrations-openai-ai-server` via Replit AI Integrations proxy
+- Payments: Stripe via Replit connector (`stripe-replit-sync` syncs to `stripe.*` schema in Postgres)
 
 ## Where things live
 
@@ -30,8 +31,13 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - `lib/api-zod/src/generated/api.ts` — generated Zod schemas (do not edit manually)
 - `lib/db/src/schema/` — Drizzle schema (nodes, notes, node_progress, achievements, users, exercises, social)
 - `lib/db/src/schema/social.ts` — friendships, friend_messages, social_notes tables
-- `artifacts/api-server/src/routes/` — Express route handlers (auth, nodes, notes, progress, exercises, social)
-- `artifacts/pap/src/components/MainApp.tsx` — full frontend (auth, tree, exercises, nav guide, Isa)
+- `artifacts/api-server/src/routes/` — Express route handlers (auth, nodes, notes, progress, exercises, social, stripe, admin)
+- `artifacts/api-server/src/stripeClient.ts` — Stripe credential fetch + StripeSync factory
+- `artifacts/api-server/src/routes/stripe.ts` — /stripe/plans, /stripe/checkout, /stripe/sync-tier, /stripe/portal (not in openapi.yaml)
+- `artifacts/api-server/src/routes/admin.ts` — POST /admin/generate-content (tier-5 only, regenerates all node content)
+- `artifacts/api-server/src/scripts/generate-content.ts` — standalone content generation runner (run via `pnpm --filter @workspace/api-server run generate-content`)
+- `scripts/src/seed-products.ts` — creates Stripe products+prices (run via `pnpm --filter @workspace/scripts run seed-products`)
+- `artifacts/pap/src/components/MainApp.tsx` — full frontend (auth, tree, exercises, nav guide, Isa, PlansModal)
 
 ## Architecture decisions
 
@@ -42,6 +48,8 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - Exercises: AI-generated via OpenAI (3 MCQ per node), cached in DB, submitted attempts tracked.
 - Achievement system: two per node (explored + read). Read triggered after 30s of modal open. Achievements are stored per-user and lazily created on first earn; the full catalog is generated on-the-fly from nodes in API responses.
 - No `console.log` in server — use `req.log` in handlers, `logger` singleton elsewhere.
+- Stripe: routes bypass OpenAPI/codegen. /stripe/plans queries stripe.products/prices (synced via stripe-replit-sync). /stripe/checkout creates a Stripe Checkout session. /stripe/sync-tier polls Stripe API for active subscription and updates users.tier. /stripe/portal opens the Stripe billing portal. Webhook at /api/stripe/webhook is registered BEFORE express.json() (needs raw Buffer). Stripe schemas in `stripe.*` Postgres schema created by `stripe-replit-sync`'s runMigrations (call before server start, or run manually: `node -e "import('stripe-replit-sync').then(m=>m.runMigrations({databaseUrl:process.env.DATABASE_URL}))"`).
+- Node content: all 57 nodes have AI-generated 3-paragraph educational summaries (~1380 chars each). Regenerate with `pnpm --filter @workspace/api-server run generate-content` (skips nodes that already have content >150 chars).
 - Isa owl: CSS/Framer Motion, personalized greeting by user name/tier, keyword-matched FUVEST responses.
 - Social routes (/api/social/*) bypass OpenAPI/codegen — use direct fetch + useQuery in SocialModal components. Not in openapi.yaml.
 - DB has both `password_plain` (legacy) and `password_hash` (bcrypt, active) columns. Auth uses `password_hash`. userCode is auto-generated on first /social/me call (lazy).
@@ -52,6 +60,9 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - 6-tier user system: Visitante (0), Aluno I–IV (1–4), Dev (5).
 - Hierarchical knowledge tree (57 nodes FUVEST 2026), tier-gated with lock icons
 - AI-generated 3-question FUVEST-style MCQ exercises per node (Aluno I+ only)
+- AI-generated rich node content: 3-paragraph educational summary per node (all 57 nodes populated)
+- Stripe subscription plans: PAP Explorador (R$29,90/mês → tier 2) + PAP Completo (R$49,90/mês → tier 4)
+- PlansModal: accessible via "Planos" button in Menu; fetches /api/stripe/plans, handles checkout redirect and tier sync after payment
 - Spaceship cockpit dashboard: notes, map, social panels
 - Social Area: profile (avatar/initials, score weighted by node depth × correct answers, user code), friends ring, chat com polling 5s, caderno compartilhado (shared notes between two users)
 - Menu panel: Status, Calendário, Insígnias, Guia (navigation guide) tabs

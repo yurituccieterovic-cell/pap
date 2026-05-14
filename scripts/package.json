@@ -8,6 +8,7 @@
     "migrate:password-hash": "tsx ./src/migrate-password-hash.ts",
     "randomize-passwords": "tsx ./src/randomize-passwords.ts",
     "seed-products": "tsx ./src/seed-products.ts",
+    "generate-content": "tsx ./src/generate-node-content.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
