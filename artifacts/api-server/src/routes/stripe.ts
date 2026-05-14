@@ -67,12 +67,16 @@ router.post("/stripe/checkout", async (req, res): Promise<void> => {
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
-      payment_method_types: ["card"],
+      payment_method_types: ["card", "boleto", "pix"],
       line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
       success_url: `${APP_URL}/?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${APP_URL}/?stripe=cancel`,
       allow_promotion_codes: true,
+      payment_method_options: {
+        pix: { expires_after_seconds: 3600 },
+        boleto: { expires_after_days: 3 },
+      },
     });
 
     res.json({ url: session.url });

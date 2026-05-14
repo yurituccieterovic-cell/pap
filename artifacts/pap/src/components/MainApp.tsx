@@ -2894,10 +2894,17 @@ type StripePlan = {
   currency: string;
 };
 
+const TIER_PERMS: Record<number, string[]> = {
+  1: ["Disciplinas (acesso gratuito)"],
+  2: ["Matéria solicitada", "Exercícios IA por tópico"],
+  3: ["Conteúdo completo de Ciências", "Todos os exercícios IA"],
+  35: ["Tudo do Aluno III", "Exercícios adicionais de reforço"],
+  4: ["Toda a árvore: Ciências + Empirismo + Filosofia + Religiões", "Acesso ao Conhecimento Humano completo"],
+};
+
 function PlansModal({
   userTier,
   onClose,
-  onTierUpgraded,
 }: {
   userTier: number;
   onClose: () => void;
@@ -2907,6 +2914,7 @@ function PlansModal({
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [tab, setTab] = useState<"planos" | "bolsa">("planos");
   const { user } = useAuth();
 
   useEffect(() => {
@@ -2947,99 +2955,213 @@ function PlansModal({
     }
   };
 
-  const tierLabel_ = (t: number) => ["Visitante", "Aluno I", "Aluno II", "Aluno III", "Aluno IV", "Dev"][t] ?? "—";
+  const tierLabel_ = (t: number) => (["Visitante", "Aluno I", "Aluno II", "Aluno III", "Aluno III.5", "Aluno IV", "Dev"] as const)[t] ?? "—";
 
   const formatPrice = (cents: number | null, currency: string) => {
     if (cents == null) return "—";
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
   };
 
+  const effectiveTier = userTier >= 35 ? 35 : userTier;
+
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="absolute inset-0 z-[100] flex items-center justify-center p-6"
-      style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(8px)" }}
+      className="absolute inset-0 z-[100] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)" }}
       onClick={onClose}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
         transition={{ type: "spring", damping: 24, stiffness: 260 }}
-        className="w-full max-w-sm rounded-2xl border border-white/10 p-6 flex flex-col gap-5"
-        style={{ background: "hsl(var(--background)/0.97)" }}
+        className="w-full max-w-sm rounded-2xl border border-white/10 flex flex-col overflow-hidden"
+        style={{ background: "hsl(var(--background)/0.97)", maxHeight: "90%" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
           <div>
             <h2 className="text-sm font-black tracking-[0.2em] text-primary uppercase">Planos PAP</h2>
-            <p className="text-[10px] text-white/40 mt-0.5">Plano atual: <span className="text-accent">{tierLabel_(userTier)}</span></p>
+            <p className="text-[10px] text-white/40 mt-0.5">
+              Plano atual: <span className="text-accent">{tierLabel_(effectiveTier)}</span>
+            </p>
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full transition-colors"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full transition-colors">
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-primary/40" />
-          </div>
-        ) : plans.length === 0 ? (
-          <div className="py-6 text-center">
-            <p className="text-[11px] text-white/40">Planos em breve. Fique ligado!</p>
-            <p className="text-[10px] text-white/25 mt-2">Integração com Stripe em configuração.</p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {plans.map((plan) => {
-              const planTier = parseInt(plan.metadata?.tier ?? "0", 10);
-              const isOwned = userTier >= planTier;
-              return (
-                <div
-                  key={plan.price_id}
-                  className="rounded-xl border p-4 flex flex-col gap-3 transition-all"
-                  style={{ borderColor: isOwned ? "hsl(var(--accent)/0.4)" : "rgba(255,255,255,0.1)", background: isOwned ? "hsl(var(--accent)/0.06)" : "rgba(255,255,255,0.02)" }}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h3 className="text-[11px] font-bold text-white">{plan.name}</h3>
-                      {plan.description && <p className="text-[9px] text-white/45 mt-1 leading-relaxed">{plan.description}</p>}
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-lg font-black text-accent">{formatPrice(plan.unit_amount, plan.currency)}</p>
-                      <p className="text-[9px] text-white/30">/mês</p>
-                    </div>
-                  </div>
-                  {isOwned ? (
-                    <div className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg bg-accent/10 text-accent text-[10px] font-bold">
-                      <Check className="w-3 h-3" />Plano ativo
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => handleCheckout(plan.price_id)}
-                      disabled={!!checkoutLoading}
-                      className="w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
-                      style={{ background: "hsl(var(--primary)/0.9)", color: "hsl(var(--background))" }}
-                    >
-                      {checkoutLoading === plan.price_id ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" /> : "Assinar"}
-                    </button>
-                  )}
+        {/* Tabs */}
+        <div className="flex border-b border-white/10 shrink-0 px-5">
+          {(["planos", "bolsa"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className="flex-1 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors"
+              style={{
+                color: tab === t ? "hsl(var(--primary))" : "rgba(255,255,255,0.35)",
+                borderBottom: tab === t ? "2px solid hsl(var(--primary))" : "2px solid transparent",
+              }}
+            >
+              {t === "planos" ? "Assinar" : "Bolsa de Acesso"}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-auto px-5 py-4 flex flex-col gap-4">
+          {tab === "planos" ? (
+            <>
+              {/* Free tier reminder */}
+              <div className="rounded-xl border border-white/8 p-3 flex items-start gap-3" style={{ background: "rgba(255,255,255,0.02)" }}>
+                <div className="w-1.5 h-1.5 rounded-full bg-white/30 mt-1.5 shrink-0" />
+                <div>
+                  <p className="text-[10px] font-bold text-white/70">Aluno I — Disciplinas</p>
+                  <p className="text-[9px] text-white/35 mt-0.5">Acesso gratuito para todos. Sem cartão.</p>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <div className="ml-auto shrink-0">
+                  <span className="text-[10px] font-black text-accent">Grátis</span>
+                </div>
+              </div>
 
-        {userTier >= 2 && (
-          <button
-            onClick={handlePortal}
-            disabled={portalLoading}
-            className="w-full py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border border-white/10 hover:bg-white/5 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {portalLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
-            Gerenciar Assinatura
-          </button>
-        )}
+              {/* Paid plans */}
+              {loading ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary/40" />
+                </div>
+              ) : plans.length === 0 ? (
+                <p className="text-[11px] text-white/40 text-center py-4">Planos em configuração. Tente em instantes.</p>
+              ) : (
+                plans.map((plan) => {
+                  const planTier = parseInt(plan.metadata?.tier ?? "0", 10);
+                  const isOwned = effectiveTier >= planTier;
+                  const perms = TIER_PERMS[planTier] ?? [];
+                  return (
+                    <div
+                      key={plan.price_id}
+                      className="rounded-xl border p-4 flex flex-col gap-3 transition-all"
+                      style={{
+                        borderColor: isOwned ? "hsl(var(--accent)/0.5)" : "rgba(255,255,255,0.1)",
+                        background: isOwned ? "hsl(var(--accent)/0.06)" : "rgba(255,255,255,0.02)",
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-black text-white leading-tight">{plan.name.replace("PAP ", "")}</p>
+                          <div className="flex flex-col gap-0.5 mt-1.5">
+                            {perms.map((p) => (
+                              <div key={p} className="flex items-start gap-1.5">
+                                <Check className="w-2.5 h-2.5 text-primary/60 shrink-0 mt-0.5" />
+                                <span className="text-[9px] text-white/50 leading-tight">{p}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-base font-black text-accent leading-tight">{formatPrice(plan.unit_amount, plan.currency)}</p>
+                          <p className="text-[8px] text-white/30">/mês</p>
+                        </div>
+                      </div>
 
-        {!user && (
-          <p className="text-[10px] text-white/35 text-center">Entre com sua conta para assinar um plano.</p>
-        )}
+                      {isOwned ? (
+                        <div className="flex items-center gap-1.5 py-1 px-3 rounded-lg bg-accent/10 text-accent text-[10px] font-bold">
+                          <Check className="w-3 h-3" />Plano ativo
+                        </div>
+                      ) : !user ? (
+                        <p className="text-[9px] text-white/35 text-center">Entre com sua conta para assinar</p>
+                      ) : (
+                        <button
+                          onClick={() => handleCheckout(plan.price_id)}
+                          disabled={!!checkoutLoading}
+                          className="w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                          style={{ background: "hsl(var(--primary)/0.9)", color: "hsl(var(--background))" }}
+                        >
+                          {checkoutLoading === plan.price_id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" />
+                            : "Assinar — Cartão, Pix ou Boleto"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+
+              {/* Payment methods note */}
+              <div className="rounded-xl border border-white/6 p-3 flex flex-col gap-1" style={{ background: "rgba(255,255,255,0.015)" }}>
+                <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest mb-1">Formas de pagamento</p>
+                {[
+                  "Cartao de credito ou debito",
+                  "Pix (expira em 1 hora)",
+                  "Boleto bancario (vence em 3 dias)",
+                ].map((m) => (
+                  <div key={m} className="flex items-center gap-1.5">
+                    <div className="w-1 h-1 rounded-full bg-white/20 shrink-0" />
+                    <span className="text-[9px] text-white/35">{m}</span>
+                  </div>
+                ))}
+                <p className="text-[8px] text-white/20 mt-2">
+                  Cobrado pela Sociedade Tucci (CNPJ 22.337.0001/41) via Stripe. Cancele quando quiser.
+                </p>
+              </div>
+
+              {effectiveTier >= 2 && (
+                <button
+                  onClick={handlePortal}
+                  disabled={portalLoading}
+                  className="w-full py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border border-white/10 hover:bg-white/5 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {portalLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
+                  Gerenciar Assinatura
+                </button>
+              )}
+            </>
+          ) : (
+            /* Bolsa tab */
+            <div className="flex flex-col gap-4">
+              <div className="rounded-xl border border-primary/20 p-4" style={{ background: "hsl(var(--primary)/0.05)" }}>
+                <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-2">Bolsa de Acesso PAP</p>
+                <p className="text-[10px] text-white/60 leading-relaxed">
+                  Se voce estuda em escola publica ou tem renda familiar ate 2 salarios minimos, pode solicitar acesso gratuito ou com desconto.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">Criterios</p>
+                {[
+                  { label: "CadUnico (bolsa 100%)", color: "text-accent" },
+                  { label: "Escola publica + renda < 2 SM (bolsa 50%)", color: "text-primary" },
+                  { label: "Outros casos (analise individual)", color: "text-white/50" },
+                ].map(({ label, color }) => (
+                  <div key={label} className="flex items-center gap-2">
+                    <Check className={`w-3 h-3 ${color} shrink-0`} />
+                    <span className={`text-[10px] ${color}`}>{label}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-xl border border-white/8 p-4" style={{ background: "rgba(255,255,255,0.02)" }}>
+                <p className="text-[10px] font-bold text-white/60 mb-2">Como solicitar</p>
+                <p className="text-[9px] text-white/40 leading-relaxed">
+                  Entre em contato pelo Instagram{" "}
+                  <a
+                    href="https://www.instagram.com/sociedadetucci"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary/70 hover:text-primary transition-colors"
+                  >
+                    @sociedadetucci
+                  </a>{" "}
+                  com seu nome, escola e situacao. Resposta em ate 48h.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-white/8 p-3" style={{ background: "rgba(255,255,255,0.02)" }}>
+                <p className="text-[9px] text-white/30 text-center leading-relaxed">
+                  Modelo 1-para-1: cada assinatura paga financia uma bolsa. Obrigado por fazer parte disso.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       </motion.div>
     </motion.div>
   );
