@@ -2902,15 +2902,122 @@ const TIER_PERMS: Record<number, string[]> = {
   4: ["Toda a árvore: Ciências + Empirismo + Filosofia + Religiões", "Acesso ao Conhecimento Humano completo"],
 };
 
+type PayPalPlan = { tier: number; plan_id: string; name: string; monthly_brl: number };
+
+interface PayPalSdk {
+  Buttons: (config: {
+    style?: Record<string, unknown>;
+    createSubscription: (data: unknown, actions: { subscription: { create: (o: { plan_id: string }) => Promise<string> } }) => Promise<string>;
+    onApprove: (data: { subscriptionID: string }) => Promise<void> | void;
+    onError?: (err: unknown) => void;
+  }) => { render: (target: HTMLElement) => Promise<void> };
+}
+
+let paypalSdkPromise: Promise<PayPalSdk | null> | null = null;
+async function loadPayPalSdk(): Promise<PayPalSdk | null> {
+  const w = window as unknown as { paypal?: PayPalSdk };
+  if (w.paypal) return w.paypal;
+  if (paypalSdkPromise) return paypalSdkPromise;
+  paypalSdkPromise = (async () => {
+    try {
+      const r = await fetch("/api/paypal/client-id");
+      const d = (await r.json()) as { clientId?: string };
+      if (!d.clientId) return null;
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(d.clientId!)}&currency=BRL&intent=subscription&vault=true&disable-funding=credit,card`;
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("PayPal SDK load failed"));
+        document.head.appendChild(script);
+      });
+      return (window as unknown as { paypal?: PayPalSdk }).paypal ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  return paypalSdkPromise;
+}
+
+function PayPalButton({ planId, onSuccess }: { planId: string; onSuccess: () => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const renderedRef = useRef(false);
+  const onSuccessRef = useRef(onSuccess);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
+
+  useEffect(() => {
+    if (renderedRef.current) return;
+    let cancelled = false;
+    void (async () => {
+      const paypal = await loadPayPalSdk();
+      if (cancelled || !paypal || !containerRef.current) return;
+      renderedRef.current = true;
+      try {
+        await paypal
+          .Buttons({
+            style: { layout: "horizontal", color: "gold", shape: "rect", label: "paypal", height: 32, tagline: false },
+            createSubscription: async () => {
+              const r = await fetch("/api/paypal/create-subscription", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ planId }),
+              });
+              const d = (await r.json()) as { id?: string; error?: string };
+              if (!r.ok || !d.id) throw new Error(d.error ?? "Falha ao criar assinatura");
+              return d.id;
+            },
+            onApprove: async (data) => {
+              setError(null);
+              try {
+                const r = await fetch("/api/paypal/sync-tier", {
+                  method: "POST",
+                  credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ subscriptionId: data.subscriptionID }),
+                });
+                const d = (await r.json()) as { error?: string };
+                if (r.ok) onSuccessRef.current();
+                else setError(d.error ?? "Falha ao sincronizar plano");
+              } catch {
+                setError("Erro de rede");
+              }
+            },
+            onError: () => setError("Erro no PayPal"),
+          })
+          .render(containerRef.current);
+      } catch {
+        setError("PayPal indisponível");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [planId]);
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div ref={containerRef} className="paypal-btn-container" />
+      {error && <p className="text-[9px] text-red-400/70 text-center">{error}</p>}
+    </div>
+  );
+}
+
 function PlansModal({
   userTier,
   onClose,
+  onTierUpgraded,
 }: {
   userTier: number;
   onClose: () => void;
   onTierUpgraded: () => void;
 }) {
   const [plans, setPlans] = useState<StripePlan[]>([]);
+  const [paypalPlans, setPaypalPlans] = useState<PayPalPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
@@ -2918,12 +3025,21 @@ function PlansModal({
   const { user } = useAuth();
 
   useEffect(() => {
-    fetch("/api/stripe/plans", { credentials: "include" })
-      .then((r) => r.json())
-      .then((d: { plans: StripePlan[] }) => setPlans(d.plans ?? []))
-      .catch(() => {})
+    Promise.all([
+      fetch("/api/stripe/plans", { credentials: "include" }).then((r) => r.json()).catch(() => ({ plans: [] })),
+      fetch("/api/paypal/plans", { credentials: "include" }).then((r) => r.json()).catch(() => ({ plans: [] })),
+    ])
+      .then(([s, p]: [{ plans: StripePlan[] }, { plans: PayPalPlan[] }]) => {
+        setPlans(s.plans ?? []);
+        setPaypalPlans(p.plans ?? []);
+      })
       .finally(() => setLoading(false));
   }, []);
+
+  const handlePayPalSuccess = () => {
+    onTierUpgraded();
+    onClose();
+  };
 
   const handleCheckout = async (priceId: string) => {
     if (!user) return;
@@ -3069,16 +3185,28 @@ function PlansModal({
                       ) : !user ? (
                         <p className="text-[9px] text-white/35 text-center">Entre com sua conta para assinar</p>
                       ) : (
-                        <button
-                          onClick={() => handleCheckout(plan.price_id)}
-                          disabled={!!checkoutLoading}
-                          className="w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
-                          style={{ background: "hsl(var(--primary)/0.9)", color: "hsl(var(--background))" }}
-                        >
-                          {checkoutLoading === plan.price_id
-                            ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" />
-                            : "Assinar — Cartão, Pix ou Boleto"}
-                        </button>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            onClick={() => handleCheckout(plan.price_id)}
+                            disabled={!!checkoutLoading}
+                            className="w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                            style={{ background: "hsl(var(--primary)/0.9)", color: "hsl(var(--background))" }}
+                          >
+                            {checkoutLoading === plan.price_id
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" />
+                              : "Cartão, Pix ou Boleto"}
+                          </button>
+                          {(() => {
+                            const pp = paypalPlans.find((pl) => pl.tier === planTier);
+                            if (!pp) return null;
+                            return (
+                              <div className="flex flex-col gap-1">
+                                <p className="text-[8px] text-white/30 text-center uppercase tracking-widest">ou</p>
+                                <PayPalButton planId={pp.plan_id} onSuccess={handlePayPalSuccess} />
+                              </div>
+                            );
+                          })()}
+                        </div>
                       )}
                     </div>
                   );
@@ -3099,7 +3227,7 @@ function PlansModal({
                   </div>
                 ))}
                 <p className="text-[8px] text-white/20 mt-2">
-                  Cobrado pela Sociedade Tucci (CNPJ 22.337.0001/41) via Stripe. Cancele quando quiser.
+                  Cobrado pela Sociedade Tucci (CNPJ 22.337.0001/41) via Stripe ou PayPal. Cancele quando quiser.
                 </p>
               </div>
 

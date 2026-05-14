@@ -11,6 +11,7 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string, `SESSION_SECRET`
+- Optional env (PayPal): `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` — REST API credentials from developer.paypal.com (Live or Sandbox; auto-detected). Stripe is via Replit connector (no env needed).
 
 ## Stack
 
@@ -34,6 +35,9 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - `artifacts/api-server/src/routes/` — Express route handlers (auth, nodes, notes, progress, exercises, social, stripe, admin)
 - `artifacts/api-server/src/stripeClient.ts` — Stripe credential fetch + StripeSync factory
 - `artifacts/api-server/src/routes/stripe.ts` — /stripe/plans, /stripe/checkout, /stripe/sync-tier, /stripe/portal (not in openapi.yaml)
+- `artifacts/api-server/src/paypalClient.ts` — PayPal OAuth token fetch + base URL auto-detect (live/sandbox)
+- `artifacts/api-server/src/routes/paypal.ts` — /paypal/client-id, /paypal/plans, /paypal/create-subscription, /paypal/sync-tier, /paypal/cancel (not in openapi.yaml)
+- `scripts/src/seed-paypal-products.ts` — creates Product + 4 Plans in PayPal, saves IDs to `paypal_plans` DB table (run via `pnpm --filter @workspace/scripts run seed-paypal-products`)
 - `artifacts/api-server/src/routes/admin.ts` — POST /admin/generate-content (tier-5 only, regenerates all node content)
 - `artifacts/api-server/src/scripts/generate-content.ts` — standalone content generation runner (run via `pnpm --filter @workspace/api-server run generate-content`)
 - `scripts/src/seed-products.ts` — creates Stripe products+prices (run via `pnpm --filter @workspace/scripts run seed-products`)
@@ -49,6 +53,7 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - Achievement system: two per node (explored + read). Read triggered after 30s of modal open. Achievements are stored per-user and lazily created on first earn; the full catalog is generated on-the-fly from nodes in API responses.
 - No `console.log` in server — use `req.log` in handlers, `logger` singleton elsewhere.
 - Stripe: routes bypass OpenAPI/codegen. /stripe/plans queries stripe.products/prices (synced via stripe-replit-sync). /stripe/checkout creates a Stripe Checkout session. /stripe/sync-tier polls Stripe API for active subscription and updates users.tier. /stripe/portal opens the Stripe billing portal. Webhook at /api/stripe/webhook is registered BEFORE express.json() (needs raw Buffer). Stripe schemas in `stripe.*` Postgres schema created by `stripe-replit-sync`'s runMigrations (call before server start, or run manually: `node -e "import('stripe-replit-sync').then(m=>m.runMigrations({databaseUrl:process.env.DATABASE_URL}))"`).
+- PayPal: routes bypass OpenAPI/codegen. Uses raw fetch + cached OAuth token (env auto-detected as live/sandbox at first call). 4 Products + Plans seeded via `seed-paypal-products` script, IDs stored in `paypal_plans` table. /paypal/create-subscription is server-side and binds `custom_id=userId` to the PayPal subscription. /paypal/sync-tier verifies `custom_id` matches the authenticated user (anti-impersonation), requires status `ACTIVE` (polls up to 6×1.5s for APPROVAL_PENDING→ACTIVE transition), then updates users.tier and stores `paypal_subscription_id`. KNOWN LIMITATION: no webhook listener — if user cancels directly on PayPal, app won't auto-downgrade. They must use the in-app cancel button (which calls /paypal/cancel) or admin must manually update.
 - Node content: all 57 nodes have AI-generated 3-paragraph educational summaries (~1380 chars each). Regenerate with `pnpm --filter @workspace/api-server run generate-content` (skips nodes that already have content >150 chars).
 - Isa owl: CSS/Framer Motion, personalized greeting by user name/tier, keyword-matched FUVEST responses.
 - Social routes (/api/social/*) bypass OpenAPI/codegen — use direct fetch + useQuery in SocialModal components. Not in openapi.yaml.
@@ -61,8 +66,8 @@ Gamified educational platform for FUVEST (Brazilian university entrance exam) pr
 - Hierarchical knowledge tree (57 nodes FUVEST 2026), tier-gated with lock icons
 - AI-generated 3-question FUVEST-style MCQ exercises per node (Aluno I+ only)
 - AI-generated rich node content: 3-paragraph educational summary per node (all 57 nodes populated)
-- Stripe subscription plans: PAP Explorador (R$29,90/mês → tier 2) + PAP Completo (R$49,90/mês → tier 4)
-- PlansModal: accessible via "Planos" button in Menu; fetches /api/stripe/plans, handles checkout redirect and tier sync after payment
+- Subscription plans (4 paid tiers): Aluno II R$19,90 → Aluno IV R$49,90/mês. Same plans available via Stripe (cartão/Pix/boleto) and PayPal (cartão/PayPal balance) at user choice.
+- PlansModal: accessible via "Planos" button in Menu; fetches /api/stripe/plans + /api/paypal/plans, shows both payment buttons per plan card
 - Spaceship cockpit dashboard: notes, map, social panels
 - Social Area: profile (avatar/initials, score weighted by node depth × correct answers, user code), friends ring, chat com polling 5s, caderno compartilhado (shared notes between two users)
 - Menu panel: Status, Calendário, Insígnias, Guia (navigation guide) tabs

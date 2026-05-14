@@ -9,6 +9,8 @@ export const usersTable = pgTable("users", {
   tier: integer("tier").notNull().default(0),
   displayName: text("display_name"),
   userCode: text("user_code").unique(),
+  stripeCustomerId: text("stripe_customer_id"),
+  paypalSubscriptionId: text("paypal_subscription_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
