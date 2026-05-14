@@ -1,8 +1,11 @@
 {
+  "buildCommand": "echo 'sem build necessario'",
+  "installCommand": "echo 'sem install necessario'",
+  "outputDirectory": "public",
   "rewrites": [
     {
-      "source": "/pap/(.*)",
-      "destination": "https://projetoaliancapanoramapap.replit.app/$1"
+      "source": "/pap/:path*",
+      "destination": "https://projetoaliancapanoramapap.replit.app/:path*"
     },
     {
       "source": "/pap",
