@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from "react";
+import { Helmet } from "react-helmet-async";
 import {
   useGetSummary,
   useListNodes,
@@ -123,6 +124,30 @@ function MainAppInner({ queryClient }: { queryClient: ReturnType<typeof useQuery
   const [donationsOpen, setDonationsOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const { user } = useAuth();
+
+  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+  useEffect(() => {
+    const path = window.location.pathname;
+    const prefix = `${base}/no/`;
+    if (path.startsWith(prefix)) {
+      const code = path.slice(prefix.length);
+      if (code) setActiveNodeCode(code);
+    }
+    const handlePopState = (e: PopStateEvent) => {
+      setActiveNodeCode((e.state as { nodeCode?: string } | null)?.nodeCode ?? null);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (activeNodeCode) {
+      window.history.pushState({ nodeCode: activeNodeCode }, "", `${base}/no/${activeNodeCode}`);
+    } else {
+      window.history.pushState({}, "", base || "/");
+    }
+  }, [activeNodeCode]);
 
   const handleAchievementEarned = (title: string, type: string) => {
     setNewAchievement({ title, type });
@@ -1258,7 +1283,45 @@ function NodeModal({ code, onClose, onNodeOpen, onAchievementEarned, onExercise,
 
   const canExercise = userTier >= 1;
 
+  const SITE = "https://projetoaliancapanoramapap.replit.app";
+  const nodeUrl = `${SITE}/no/${code}`;
+  const nodeTitle = node ? `${node.title} — FUVEST 2026 | PAP` : "PAP — Projeto Aliança Panorama";
+  const nodeDesc = node?.subtitle
+    ? `${node.subtitle} — Estude ${node.title} para a FUVEST 2026 com exercícios gerados por IA.`
+    : `Estude ${node?.title ?? code} para a FUVEST 2026 com a plataforma PAP — árvore do conhecimento gamificada.`;
+
   return (
+    <>
+      {node && (
+        <Helmet>
+          <title>{nodeTitle}</title>
+          <meta name="description" content={nodeDesc} />
+          <link rel="canonical" href={nodeUrl} />
+          <meta property="og:type" content="article" />
+          <meta property="og:url" content={nodeUrl} />
+          <meta property="og:title" content={nodeTitle} />
+          <meta property="og:description" content={nodeDesc} />
+          <meta property="og:image" content={`${SITE}/opengraph.jpg`} />
+          <meta name="twitter:card" content="summary_large_image" />
+          <meta name="twitter:title" content={nodeTitle} />
+          <meta name="twitter:description" content={nodeDesc} />
+          <script type="application/ld+json">{JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Course",
+            "name": node.title,
+            "description": nodeDesc,
+            "url": nodeUrl,
+            "provider": {
+              "@type": "EducationalOrganization",
+              "name": "PAP — Projeto Aliança Panorama",
+              "url": SITE
+            },
+            "teaches": node.title,
+            "inLanguage": "pt-BR",
+            "educationalLevel": "Ensino Médio / Vestibular"
+          })}</script>
+        </Helmet>
+      )}
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="absolute inset-0 bg-black/70 z-40 flex items-center justify-center p-8"
@@ -1348,6 +1411,7 @@ function NodeModal({ code, onClose, onNodeOpen, onAchievementEarned, onExercise,
         )}
       </motion.div>
     </motion.div>
+    </>
   );
 }
 

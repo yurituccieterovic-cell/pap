@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://projetoaliancapanoramapap.replit.app/api/sitemap.xml
+Sitemap: https://www.sociedadetucci.com.br/pap/api/sitemap.xml

@@ -6,10 +6,12 @@ import progressRouter from "./progress";
 import authRouter from "./auth";
 import exercisesRouter from "./exercises";
 import socialRouter from "./social";
+import sitemapRouter from "./sitemap";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(sitemapRouter);
 router.use(authRouter);
 router.use(exercisesRouter);
 router.use(socialRouter);
