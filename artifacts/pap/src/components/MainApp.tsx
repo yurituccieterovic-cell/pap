@@ -62,6 +62,7 @@ import {
   ExternalLink,
   Check,
   ChevronLeft,
+  Loader2,
 } from "lucide-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 
@@ -123,9 +124,20 @@ function MainAppInner({ queryClient }: { queryClient: ReturnType<typeof useQuery
   const [palette, setPalette] = useState<"space" | "nature" | "aurora">("space");
   const [donationsOpen, setDonationsOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
-  const { user } = useAuth();
+  const [plansOpen, setPlansOpen] = useState(false);
+  const { user, refetch: refetchUser } = useAuth();
 
   const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("stripe") === "success") {
+      fetch("/api/stripe/sync-tier", { credentials: "include" })
+        .then(() => refetchUser())
+        .catch(() => {});
+      window.history.replaceState({}, "", base || "/");
+    }
+  }, []);
 
   useEffect(() => {
     const path = window.location.pathname;
@@ -185,6 +197,7 @@ function MainAppInner({ queryClient }: { queryClient: ReturnType<typeof useQuery
             onPalette={setPalette}
             onDonations={() => setDonationsOpen(true)}
             onTutorial={() => setTutorialOpen(true)}
+            onPlans={() => { setMenuOpen(false); setPlansOpen(true); }}
           />
         )}
       </AnimatePresence>
@@ -234,6 +247,16 @@ function MainAppInner({ queryClient }: { queryClient: ReturnType<typeof useQuery
       <AnimatePresence>
         {tutorialOpen && (
           <TutorialModal onClose={() => setTutorialOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {plansOpen && (
+          <PlansModal
+            userTier={user?.tier ?? 0}
+            onClose={() => setPlansOpen(false)}
+            onTierUpgraded={() => { refetchUser(); setPlansOpen(false); }}
+          />
         )}
       </AnimatePresence>
 
@@ -909,7 +932,7 @@ function SpaceshipDashboard({ activeNodeCode, onSocialOpen }: { activeNodeCode: 
 }
 
 /* ─── Menu Panel ─────────────────────────────────────────────────────────── */
-function MenuPanel({ onClose, onMirror, onInvert, palette, onPalette, onDonations, onTutorial }: {
+function MenuPanel({ onClose, onMirror, onInvert, palette, onPalette, onDonations, onTutorial, onPlans }: {
   onClose: () => void;
   onMirror: () => void;
   onInvert: () => void;
@@ -917,6 +940,7 @@ function MenuPanel({ onClose, onMirror, onInvert, palette, onPalette, onDonation
   onPalette: (p: "space" | "nature" | "aurora") => void;
   onDonations: () => void;
   onTutorial: () => void;
+  onPlans: () => void;
 }) {
   const { data: summary } = useGetSummary();
   const { data: achievements } = useListAchievements();
@@ -1025,7 +1049,7 @@ function MenuPanel({ onClose, onMirror, onInvert, palette, onPalette, onDonation
                 <button onClick={onTutorial} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-bold tracking-widest uppercase border border-white/10 hover:bg-white/5 transition-colors">
                   <Info className="w-3 h-3" />Sobre
                 </button>
-                <button onClick={onDonations} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-bold tracking-widest uppercase border border-accent/30 hover:bg-accent/10 text-accent/80 transition-colors">
+                <button onClick={onPlans} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-bold tracking-widest uppercase border border-accent/30 hover:bg-accent/10 text-accent/80 transition-colors">
                   <CreditCard className="w-3 h-3" />Planos
                 </button>
               </div>
@@ -2854,6 +2878,168 @@ function TutorialModal({ onClose }: { onClose: () => void }) {
             </a>
           </div>
         </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── Plans Modal ────────────────────────────────────────────────────────── */
+type StripePlan = {
+  product_id: string;
+  name: string;
+  description: string | null;
+  metadata: Record<string, string> | null;
+  price_id: string;
+  unit_amount: number | null;
+  currency: string;
+};
+
+function PlansModal({
+  userTier,
+  onClose,
+  onTierUpgraded,
+}: {
+  userTier: number;
+  onClose: () => void;
+  onTierUpgraded: () => void;
+}) {
+  const [plans, setPlans] = useState<StripePlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    fetch("/api/stripe/plans", { credentials: "include" })
+      .then((r) => r.json())
+      .then((d: { plans: StripePlan[] }) => setPlans(d.plans ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleCheckout = async (priceId: string) => {
+    if (!user) return;
+    setCheckoutLoading(priceId);
+    try {
+      const r = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId }),
+      });
+      const d = (await r.json()) as { url?: string; error?: string };
+      if (d.url) window.location.href = d.url;
+    } catch {
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
+
+  const handlePortal = async () => {
+    setPortalLoading(true);
+    try {
+      const r = await fetch("/api/stripe/portal", { method: "POST", credentials: "include" });
+      const d = (await r.json()) as { url?: string };
+      if (d.url) window.location.href = d.url;
+    } catch {
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  const tierLabel_ = (t: number) => ["Visitante", "Aluno I", "Aluno II", "Aluno III", "Aluno IV", "Dev"][t] ?? "—";
+
+  const formatPrice = (cents: number | null, currency: string) => {
+    if (cents == null) return "—";
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="absolute inset-0 z-[100] flex items-center justify-center p-6"
+      style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(8px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+        transition={{ type: "spring", damping: 24, stiffness: 260 }}
+        className="w-full max-w-sm rounded-2xl border border-white/10 p-6 flex flex-col gap-5"
+        style={{ background: "hsl(var(--background)/0.97)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-black tracking-[0.2em] text-primary uppercase">Planos PAP</h2>
+            <p className="text-[10px] text-white/40 mt-0.5">Plano atual: <span className="text-accent">{tierLabel_(userTier)}</span></p>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full transition-colors"><X className="w-4 h-4" /></button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-primary/40" />
+          </div>
+        ) : plans.length === 0 ? (
+          <div className="py-6 text-center">
+            <p className="text-[11px] text-white/40">Planos em breve. Fique ligado!</p>
+            <p className="text-[10px] text-white/25 mt-2">Integração com Stripe em configuração.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {plans.map((plan) => {
+              const planTier = parseInt(plan.metadata?.tier ?? "0", 10);
+              const isOwned = userTier >= planTier;
+              return (
+                <div
+                  key={plan.price_id}
+                  className="rounded-xl border p-4 flex flex-col gap-3 transition-all"
+                  style={{ borderColor: isOwned ? "hsl(var(--accent)/0.4)" : "rgba(255,255,255,0.1)", background: isOwned ? "hsl(var(--accent)/0.06)" : "rgba(255,255,255,0.02)" }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-[11px] font-bold text-white">{plan.name}</h3>
+                      {plan.description && <p className="text-[9px] text-white/45 mt-1 leading-relaxed">{plan.description}</p>}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-lg font-black text-accent">{formatPrice(plan.unit_amount, plan.currency)}</p>
+                      <p className="text-[9px] text-white/30">/mês</p>
+                    </div>
+                  </div>
+                  {isOwned ? (
+                    <div className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg bg-accent/10 text-accent text-[10px] font-bold">
+                      <Check className="w-3 h-3" />Plano ativo
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => handleCheckout(plan.price_id)}
+                      disabled={!!checkoutLoading}
+                      className="w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                      style={{ background: "hsl(var(--primary)/0.9)", color: "hsl(var(--background))" }}
+                    >
+                      {checkoutLoading === plan.price_id ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" /> : "Assinar"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {userTier >= 2 && (
+          <button
+            onClick={handlePortal}
+            disabled={portalLoading}
+            className="w-full py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border border-white/10 hover:bg-white/5 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {portalLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
+            Gerenciar Assinatura
+          </button>
+        )}
+
+        {!user && (
+          <p className="text-[10px] text-white/35 text-center">Entre com sua conta para assinar um plano.</p>
+        )}
       </motion.div>
     </motion.div>
   );

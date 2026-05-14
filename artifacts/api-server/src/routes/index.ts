@@ -7,11 +7,15 @@ import authRouter from "./auth";
 import exercisesRouter from "./exercises";
 import socialRouter from "./social";
 import sitemapRouter from "./sitemap";
+import adminRouter from "./admin";
+import stripeRouter from "./stripe";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(sitemapRouter);
+router.use(adminRouter);
+router.use(stripeRouter);
 router.use(authRouter);
 router.use(exercisesRouter);
 router.use(socialRouter);
